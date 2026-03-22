@@ -67,8 +67,8 @@ object Main extends App {
 
     val (gRates, rRates, avgRate) = validation match {
       case ScheduleValid(_, gr, rr, avg) =>
-        val g = gr.toList.sortBy(_._1).map { case (k, v) => s"${q(k)}:${f"$v%.2f"}" }.mkString(",")
-        val r = rr.toList.sortBy(_._1).map { case (k, v) => s"${q(k)}:${f"$v%.2f"}" }.mkString(",")
+        val g = gr.toList.sortBy(_._1).map { case (k, v) => s"${q(k)}:${String.format(java.util.Locale.US, "%.2f", v)}" }.mkString(",")
+        val r = rr.toList.sortBy(_._1).map { case (k, v) => s"${q(k)}:${String.format(java.util.Locale.US, "%.2f", v)}" }.mkString(",")
         (g, r, avg)
       case _ => ("", "", 0.0)
     }
@@ -85,7 +85,7 @@ object Main extends App {
 
     s"""{${q("runwayCount")}:${s.runwayCount},${q("garageCount")}:${s.garageCount},""" +
     s"""${q("dayStart")}:${q(s.dayStart.toString)},${q("dayEnd")}:${q(s.dayEnd.toString)},""" +
-    s"""${q("totalFlights")}:${s.flights.size},${q("avgGarageRate")}:${f"$avgRate%.2f"},""" +
+    s"""${q("totalFlights")}:${s.flights.size},${q("avgGarageRate")}:${String.format(java.util.Locale.US, "%.2f", avgRate)},""" +
     s"""${q("garageRates")}:{$gRates},${q("runwayRates")}:{$rRates},""" +
     s"""${q("ops")}:{$opsJson},""" +
     s"""${q("byGarage")}:{$byGarageJson},${q("byRunway")}:{$byRunwayJson},${q("global")}:[$globalJson]}"""
