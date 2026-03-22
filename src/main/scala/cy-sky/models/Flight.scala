@@ -1,4 +1,4 @@
-package cyairsim.models
+package cysky.models
 
 import java.time.LocalTime
 

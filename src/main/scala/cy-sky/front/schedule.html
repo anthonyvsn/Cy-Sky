@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AeroSim — Emploi du temps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0e17;
+    --bg2:       #0f1520;
+    --bg3:       #141c2e;
+    --panel:     #1a2440;
+    --border:    #1e2d4a;
+    --amber:     #f5a623;
+    --amber-dim: #7a531a;
+    --green:     #00e676;
+    --green-dim: #00553a;
+    --red:       #ff5252;
+    --red-dim:   #5c1d1d;
+    --blue:      #40c4ff;
+    --blue-dim:  #1a4a6e;
+    --text:      #c8d8f0;
+    --text-dim:  #4a6080;
+    --text-mid:  #7a9ab8;
+    --mono:      'Share Tech Mono', monospace;
+    --sans:      'Barlow', sans-serif;
+    --cond:      'Barlow Condensed', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Bruit de fond ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Header ── */
+  header {
+    position: relative;
+    padding: 28px 48px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(180deg, #0d1422 0%, transparent 100%);
+  }
+
+  .logo-group { display: flex; align-items: baseline; gap: 14px; }
+
+  .logo {
+    font-family: var(--cond);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--amber);
+    text-transform: uppercase;
+  }
+
+  .logo-sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.08em;
+  }
+
+  .live-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .clock {
+    font-family: var(--mono);
+    font-size: 22px;
+    color: var(--amber);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+
+  .stat {
+    flex: 1;
+    min-width: 140px;
+    padding: 16px 28px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .stat-value {
+    font-family: var(--cond);
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--amber);
+  }
+
+  .stat-value.green { color: var(--green); }
+  .stat-value.blue  { color: var(--blue); }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 48px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+  }
+
+  .tab {
+    padding: 14px 24px;
+    font-family: var(--cond);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .tab:hover { color: var(--text-mid); }
+
+  .tab.active {
+    color: var(--amber);
+    border-bottom-color: var(--amber);
+  }
+
+  /* ── Main layout ── */
+  main {
+    padding: 32px 48px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── Section titres ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-family: var(--cond);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .section-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--bg3);
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  /* ── Grille garages ── */
+  .garages-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 20px;
+  }
+
+  .garage-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    animation: fadeUp 0.4s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .garage-card:nth-child(1) { animation-delay: 0.05s; }
+  .garage-card:nth-child(2) { animation-delay: 0.10s; }
+  .garage-card:nth-child(3) { animation-delay: 0.15s; }
+
+  .garage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .garage-id {
+    font-family: var(--cond);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+  }
+
+  .occ-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .occ-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-mid);
+  }
+
+  .occ-bar {
+    width: 80px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .occ-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--green);
+    transition: width 1s ease;
+  }
+
+  /* ── Timeline garage ── */
+  .timeline {
+    padding: 12px 0;
+  }
+
+  .tl-item {
+    display: grid;
+    grid-template-columns: 64px 1fr 80px;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid rgba(30, 45, 74, 0.5);
+    transition: background 0.15s;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  .tl-item:hover { background: rgba(255,255,255,0.02); }
+  .tl-item:last-child { border-bottom: none; }
+
+  .tl-time {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--amber);
+    letter-spacing: 0.05em;
+  }
+
+  .tl-body { display: flex; flex-direction: column; gap: 2px; }
+
+  .tl-id {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--blue);
+  }
+
+  .tl-dest {
+    font-family: var(--sans);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+
+  .tl-boarding {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 7px;
+    border-radius: 2px;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge-arr  { background: var(--blue-dim);  color: var(--blue);  }
+  .badge-dep  { background: var(--green-dim); color: var(--green); }
+  .badge-rwy  { background: var(--bg3); color: var(--text-mid); border: 1px solid var(--border); }
+
+  /* ── Vue pistes ── */
+  .runways-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+    gap: 20px;
+  }
+
+  .runway-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    animation: fadeUp 0.4s ease both;
+  }
+
+  .runway-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .runway-id {
+    font-family: var(--cond);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--blue);
+  }
+
+  .rwy-op-row {
+    display: grid;
+    grid-template-columns: 64px 80px 1fr 80px;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid rgba(30, 45, 74, 0.5);
+    transition: background 0.15s;
+  }
+
+  .rwy-op-row:hover { background: rgba(255,255,255,0.02); }
+  .rwy-op-row:last-child { border-bottom: none; }
+
+  /* ── Vue globale ── */
+  .global-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .global-table th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    background: var(--bg3);
+  }
+
+  .global-table td {
+    padding: 9px 16px;
+    border-bottom: 1px solid rgba(30,45,74,0.5);
+    vertical-align: middle;
+  }
+
+  .global-table tr:hover td { background: rgba(255,255,255,0.015); }
+  .global-table tr:last-child td { border-bottom: none; }
+
+  .mono { font-family: var(--mono); }
+  .dim  { color: var(--text-dim); }
+  .mid  { color: var(--text-mid); }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .filter-input {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+    width: 220px;
+    transition: border-color 0.2s;
+  }
+
+  .filter-input::placeholder { color: var(--text-dim); }
+  .filter-input:focus { border-color: var(--amber); }
+
+  .filter-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-mid);
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+  }
+
+  .filter-btn:hover, .filter-btn.active {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-group">
+    <div class="logo">AeroSim</div>
+    <div class="logo-sub">FLIGHT OPERATIONS SYSTEM v1.0</div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge"><span class="live-dot"></span>SIMULATION ACTIVE</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<div class="stats-bar" id="stats-bar">
+  <!-- rempli par JS -->
+</div>
+
+<nav class="tabs">
+  <div class="tab active" onclick="switchTab('global')">Vue générale</div>
+  <div class="tab" onclick="switchTab('gates')">Par gate</div>
+  <div class="tab" onclick="switchTab('runways')">Par piste</div>
+</nav>
+
+<main>
+
+  <!-- ── Vue générale ── -->
+  <div class="view active" id="view-global">
+    <div class="filter-bar">
+      <input class="filter-input" id="search-global" placeholder="Rechercher vol, gate, dest..." oninput="filterGlobal()">
+      <button class="filter-btn active" onclick="filterType('all',this)">Tous</button>
+      <button class="filter-btn" onclick="filterType('ARR',this)">Arrivées</button>
+      <button class="filter-btn" onclick="filterType('DEP',this)">Départs</button>
+    </div>
+    <table class="global-table" id="global-table">
+      <thead>
+        <tr>
+          <th>Heure</th>
+          <th>Type</th>
+          <th>Vol</th>
+          <th>Piste</th>
+          <th>Gate</th>
+          <th>Boarding</th>
+          <th>Destination</th>
+        </tr>
+      </thead>
+      <tbody id="global-body"></tbody>
+    </table>
+  </div>
+
+  <!-- ── Vue gates ── -->
+  <div class="view" id="view-gates">
+    <div class="garages-grid" id="gates-grid"></div>
+  </div>
+
+  <!-- ── Vue pistes ── -->
+  <div class="view" id="view-runways">
+    <div class="runways-grid" id="runways-grid"></div>
+  </div>
+
+</main>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// DONNÉES — remplacer par les vraies données du ScheduleGenerator
+// ════════════════════════════════════════════════════════════════
+const DATA = {
+  runwayCount: 2,
+  garageCount: 3,
+  dayStart: "06:00",
+  dayEnd:   "23:59",
+
+  // byGarage : clé = gateId, valeur = liste de vols
+  byGarage: {
+    "GATE_1": [
+      { flightId:"GATE_1_F001", airplaneId:"PLANE_GATE_1_001", arrivalTime:"06:00", arrivalRunway:"RWY_1", departureRunway:"RWY_2", departureTime:"09:51", destination:"CDG", boardingTime:"09:04", gateId:"GATE_1" },
+      { flightId:"GATE_1_F002", airplaneId:"PLANE_GATE_1_002", arrivalTime:"09:43", arrivalRunway:"RWY_1", departureRunway:"RWY_1", departureTime:"14:20", destination:"JFK", boardingTime:"13:33", gateId:"GATE_1" },
+      { flightId:"GATE_1_F003", airplaneId:"PLANE_GATE_1_003", arrivalTime:"14:12", arrivalRunway:"RWY_2", departureRunway:"RWY_2", departureTime:"18:44", destination:"LHR", boardingTime:"17:57", gateId:"GATE_1" },
+      { flightId:"GATE_1_F004", airplaneId:"PLANE_GATE_1_004", arrivalTime:"18:36", arrivalRunway:"RWY_1", departureRunway:"RWY_1", departureTime:"22:15", destination:"AMS", boardingTime:"21:28", gateId:"GATE_1" },
+    ],
+    "GATE_2": [
+      { flightId:"GATE_2_F001", airplaneId:"PLANE_GATE_2_001", arrivalTime:"06:00", arrivalRunway:"RWY_2", departureRunway:"RWY_1", departureTime:"10:22", destination:"FRA", boardingTime:"09:35", gateId:"GATE_2" },
+      { flightId:"GATE_2_F002", airplaneId:"PLANE_GATE_2_002", arrivalTime:"10:14", arrivalRunway:"RWY_2", departureRunway:"RWY_2", departureTime:"15:48", destination:"MAD", boardingTime:"15:01", gateId:"GATE_2" },
+      { flightId:"GATE_2_F003", airplaneId:"PLANE_GATE_2_003", arrivalTime:"15:40", arrivalRunway:"RWY_1", departureRunway:"RWY_1", departureTime:"19:55", destination:"BCN", boardingTime:"19:08", gateId:"GATE_2" },
+      { flightId:"GATE_2_F004", airplaneId:"PLANE_GATE_2_004", arrivalTime:"19:47", arrivalRunway:"RWY_2", departureRunway:"RWY_2", departureTime:"23:30", destination:"FCO", boardingTime:"22:43", gateId:"GATE_2" },
+    ],
+    "GATE_3": [
+      { flightId:"GATE_3_F001", airplaneId:"PLANE_GATE_3_001", arrivalTime:"06:00", arrivalRunway:"RWY_1", departureRunway:"RWY_2", departureTime:"11:06", destination:"DXB", boardingTime:"10:19", gateId:"GATE_3" },
+      { flightId:"GATE_3_F002", airplaneId:"PLANE_GATE_3_002", arrivalTime:"10:58", arrivalRunway:"RWY_2", departureRunway:"RWY_1", departureTime:"16:30", destination:"IST", boardingTime:"15:43", gateId:"GATE_3" },
+      { flightId:"GATE_3_F003", airplaneId:"PLANE_GATE_3_003", arrivalTime:"16:22", arrivalRunway:"RWY_1", departureRunway:"RWY_2", departureTime:"21:14", destination:"CDG", boardingTime:"20:27", gateId:"GATE_3" },
+    ],
+  }
+};
+
+// ════════════════════════════════════════════════════════════════
+// LOGIQUE
+// ════════════════════════════════════════════════════════════════
+
+// Aplatir tous les vols
+const allFlights = Object.values(DATA.byGarage).flat();
+
+// Vue par piste : fusionner arrivées et départs, trier par heure
+function buildByRunway() {
+  const map = {};
+  for (let i = 1; i <= DATA.runwayCount; i++) map[`RWY_${i}`] = [];
+  allFlights.forEach(f => {
+    map[f.arrivalRunway]?.push({ time: f.arrivalTime, type: 'ARR', flight: f });
+    map[f.departureRunway]?.push({ time: f.departureTime, type: 'DEP', flight: f });
+  });
+  Object.keys(map).forEach(rid => map[rid].sort((a,b) => a.time.localeCompare(b.time)));
+  return map;
+}
+const byRunway = buildByRunway();
+
+// Emploi du temps global sans doublons
+function buildGlobal() {
+  const events = [];
+  allFlights.forEach(f => {
+    events.push({ time: f.arrivalTime,   type: 'ARR', flight: f, runway: f.arrivalRunway });
+    events.push({ time: f.departureTime, type: 'DEP', flight: f, runway: f.departureRunway });
+  });
+  return events.sort((a,b) => a.time.localeCompare(b.time));
+}
+const globalEvents = buildGlobal();
+
+// Occupation garage
+function garageOccRate(gateId) {
+  const flights = DATA.byGarage[gateId] || [];
+  const dayMin = 1079; // 06:00 → 23:59
+  let occ = 0;
+  flights.forEach(f => {
+    const arr = toMin(f.arrivalTime) + 18; // +Landing+Taxi
+    const dep = toMin(f.departureTime) - 8; // -TaxiToRunway
+    occ += Math.max(0, dep - arr);
+  });
+  return Math.min(1, occ / dayMin);
+}
+
+function toMin(t) {
+  const [h, m] = t.split(':').map(Number);
+  return (h - 6) * 60 + m; // offset depuis 06:00
+}
+
+// ════════════════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════════════════
+
+// Stats bar
+function renderStats() {
+  const totalArr = allFlights.length;
+  const totalDep = allFlights.length;
+  const garageCount = Object.keys(DATA.byGarage).length;
+  const avgOcc = Object.keys(DATA.byGarage).reduce((s,g) => s + garageOccRate(g), 0) / garageCount;
+
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat"><div class="stat-label">Vols totaux</div><div class="stat-value">${totalArr}</div></div>
+    <div class="stat"><div class="stat-label">Arrivées</div><div class="stat-value blue">${totalArr}</div></div>
+    <div class="stat"><div class="stat-label">Départs</div><div class="stat-value green">${totalDep}</div></div>
+    <div class="stat"><div class="stat-label">Gates actives</div><div class="stat-value">${garageCount}</div></div>
+    <div class="stat"><div class="stat-label">Pistes</div><div class="stat-value">${DATA.runwayCount}</div></div>
+    <div class="stat"><div class="stat-label">Occ. moy. garage</div><div class="stat-value ${avgOcc >= 0.6 ? 'green' : ''}">${(avgOcc*100).toFixed(0)}%</div></div>
+  `;
+}
+
+// Vue globale
+let currentTypeFilter = 'all';
+
+function renderGlobal(events) {
+  const tbody = document.getElementById('global-body');
+  tbody.innerHTML = events.map((e, i) => `
+    <tr data-type="${e.type}" style="animation: fadeUp 0.3s ease ${Math.min(i*0.02, 0.5)}s both">
+      <td><span class="mono" style="color:var(--amber)">${e.time}</span></td>
+      <td><span class="badge ${e.type === 'ARR' ? 'badge-arr' : 'badge-dep'}">${e.type}</span></td>
+      <td><span class="mono" style="color:var(--blue)">${e.flight.flightId}</span></td>
+      <td><span class="badge badge-rwy">${e.runway}</span></td>
+      <td><span class="mono mid">${e.flight.gateId}</span></td>
+      <td><span class="mono dim">${e.type === 'DEP' ? e.flight.boardingTime : '—'}</span></td>
+      <td><span style="color:var(--text-mid);letter-spacing:0.05em">${e.type === 'DEP' ? e.flight.destination : '—'}</span></td>
+    </tr>
+  `).join('');
+}
+
+function filterGlobal() {
+  const q = document.getElementById('search-global').value.toLowerCase();
+  const filtered = globalEvents.filter(e => {
+    const matchType = currentTypeFilter === 'all' || e.type === currentTypeFilter;
+    const matchQ = !q ||
+      e.flight.flightId.toLowerCase().includes(q) ||
+      e.flight.gateId.toLowerCase().includes(q) ||
+      e.flight.destination.toLowerCase().includes(q) ||
+      e.runway.toLowerCase().includes(q);
+    return matchType && matchQ;
+  });
+  renderGlobal(filtered);
+}
+
+function filterType(type, btn) {
+  currentTypeFilter = type;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filterGlobal();
+}
+
+// Vue gates
+function renderGates() {
+  document.getElementById('gates-grid').innerHTML =
+    Object.entries(DATA.byGarage).map(([gid, flights]) => {
+      const occ = garageOccRate(gid);
+      const rows = flights.map(f => `
+        <div class="tl-item">
+          <div class="tl-time">${f.arrivalTime}</div>
+          <div class="tl-body">
+            <div class="tl-id">${f.flightId}</div>
+            <div class="tl-dest">→ ${f.destination} &nbsp;|&nbsp; DEP ${f.departureTime}</div>
+            <div class="tl-boarding">BOARDING ${f.boardingTime}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+            <span class="badge badge-arr">${f.arrivalRunway}</span>
+            <span class="badge badge-dep">${f.departureRunway}</span>
+          </div>
+        </div>
+      `).join('');
+
+      return `
+        <div class="garage-card">
+          <div class="garage-header">
+            <div class="garage-id">${gid}</div>
+            <div class="occ-bar-wrap">
+              <span class="occ-label">${(occ*100).toFixed(0)}%</span>
+              <div class="occ-bar"><div class="occ-fill" style="width:${occ*100}%"></div></div>
+            </div>
+          </div>
+          <div class="timeline">${rows}</div>
+        </div>
+      `;
+    }).join('');
+}
+
+// Vue pistes
+function renderRunways() {
+  document.getElementById('runways-grid').innerHTML =
+    Object.entries(byRunway).map(([rid, ops]) => {
+      const arrCount = ops.filter(o => o.type === 'ARR').length;
+      const depCount = ops.filter(o => o.type === 'DEP').length;
+      const rows = ops.map(o => `
+        <div class="rwy-op-row">
+          <span class="mono" style="color:var(--amber)">${o.time}</span>
+          <span class="badge ${o.type === 'ARR' ? 'badge-arr' : 'badge-dep'}">${o.type}</span>
+          <div>
+            <div class="mono" style="color:var(--blue);font-size:12px">${o.flight.flightId}</div>
+            <div class="dim" style="font-size:11px">${o.type === 'DEP' ? '→ ' + o.flight.destination : '← ' + o.flight.gateId}</div>
+          </div>
+          <span class="badge badge-rwy">${o.flight.gateId}</span>
+        </div>
+      `).join('');
+
+      return `
+        <div class="runway-card">
+          <div class="runway-header">
+            <div class="runway-id">${rid}</div>
+            <div style="display:flex;gap:8px">
+              <span class="badge badge-arr">${arrCount} ARR</span>
+              <span class="badge badge-dep">${depCount} DEP</span>
+            </div>
+          </div>
+          <div>${rows}</div>
+        </div>
+      `;
+    }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// TABS + HORLOGE
+// ════════════════════════════════════════════════════════════════
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('view-' + name).classList.add('active');
+}
+
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+renderStats();
+renderGlobal(globalEvents);
+renderGates();
+renderRunways();
+updateClock();
+setInterval(updateClock, 1000);
+</script>
+</body>
+</html>
