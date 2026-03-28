@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CY-SKY Aeroport</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a1a2e; color:#e0e0e0; font-family:Consolas,monospace; overflow:hidden; }
+  #header { position:fixed; top:0; left:0; right:0; height:48px; background:#16213e;
+            display:flex; align-items:center; padding:0 20px; z-index:10;
+            border-bottom:1px solid #0f3460; }
+  #header h1 { font-size:16px; color:#4fc3f7; }
+  #header .stats { margin-left:auto; font-size:12px; color:#888; }
+  #canvas { position:fixed; top:48px; left:0; right:0; bottom:0; }
+  svg { width:100%; height:100%; }
+  .place { cursor:pointer; }
+  .place:hover circle { stroke:#fff; stroke-width:3; }
+  .trans { cursor:pointer; }
+  .trans:hover rect { stroke:#fff; stroke-width:2; }
+  .arc { fill:none; stroke-width:1.5; }
+  .arc.pre { stroke:#ef5350; }
+  .arc.post { stroke:#42a5f5; }
+  .arc.selfloop { stroke:#66bb6a; stroke-dasharray:6,3; }
+  .token { font-size:11px; fill:#fff; text-anchor:middle; font-weight:bold; pointer-events:none; }
+  .pname { font-size:8px; fill:#ccc; text-anchor:middle; pointer-events:none; }
+  .tname { font-size:7px; fill:#333; text-anchor:middle; pointer-events:none; }
+  #legend { position:fixed; bottom:10px; left:10px; background:#16213e; padding:10px;
+            border-radius:6px; font-size:11px; border:1px solid #0f3460; }
+  #legend div { margin:3px 0; display:flex; align-items:center; gap:8px; }
+  .ldot { width:12px; height:12px; border-radius:50%; display:inline-block; }
+  .lsq { width:12px; height:12px; display:inline-block; }
+  #tooltip { position:fixed; background:#16213e; border:1px solid #4fc3f7; padding:8px 12px;
+             border-radius:4px; font-size:11px; display:none; pointer-events:none; z-index:20; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>CY-SKY Aeroport</h1>
+  <div class="stats" id="stats"></div>
+</div>
+<div id="canvas"><svg id="svg"></svg></div>
+<div id="legend">
+  <div><span class="ldot" style="background:#4CAF50"></span> Buffer</div>
+  <div><span class="ldot" style="background:#FFF9C4;border:1px solid #888"></span> Open</div>
+  <div><span class="ldot" style="background:#EF9A9A"></span> Close</div>
+  <div><span class="ldot" style="background:#90CAF9"></span> Count</div>
+  <div style="margin-top:6px"><span class="lsq" style="background:#FFD54F"></span> TW-TR</div>
+  <div><span class="lsq" style="background:#CE93D8"></span> Redirect</div>
+  <div><span class="lsq" style="background:#FF8A65"></span> Lock/Unlock</div>
+  <div><span class="lsq" style="background:#4FC3F7"></span> Landing/Takeoff</div>
+  <div style="margin-top:6px;color:#ef5350">--- Pre arc</div>
+  <div style="color:#42a5f5">--- Post arc</div>
+  <div style="color:#66bb6a">- - Self-loop</div>
+</div>
+<div id="tooltip"></div>
+<script>
+var places = [{"name":"BufferTaxiWay_1","tokens":5,"cat":"buffer"},{"name":"TaxiWay_1","tokens":0,"cat":"default"},{"name":"TW_open_1","tokens":1,"cat":"open"},{"name":"TW_close_1","tokens":0,"cat":"close"},{"name":"BufferTaxiWay_2","tokens":5,"cat":"buffer"},{"name":"TaxiWay_2","tokens":0,"cat":"default"},{"name":"TW_open_2","tokens":1,"cat":"open"},{"name":"TW_close_2","tokens":0,"cat":"close"},{"name":"BufferTaxiWay_3","tokens":5,"cat":"buffer"},{"name":"TaxiWay_3","tokens":0,"cat":"default"},{"name":"TW_open_3","tokens":1,"cat":"open"},{"name":"TW_close_3","tokens":0,"cat":"close"},{"name":"BufferTrack_1","tokens":5,"cat":"buffer"},{"name":"Track_1","tokens":0,"cat":"default"},{"name":"TR_open_1","tokens":1,"cat":"open"},{"name":"TR_close_1","tokens":0,"cat":"close"},{"name":"BufferTrack_2","tokens":5,"cat":"buffer"},{"name":"Track_2","tokens":0,"cat":"default"},{"name":"TR_open_2","tokens":1,"cat":"open"},{"name":"TR_close_2","tokens":0,"cat":"close"},{"name":"BufferTrack_3","tokens":5,"cat":"buffer"},{"name":"Track_3","tokens":0,"cat":"default"},{"name":"TR_open_3","tokens":1,"cat":"open"},{"name":"TR_close_3","tokens":0,"cat":"close"},{"name":"countPlanes","tokens":5,"cat":"count"},{"name":"BufferCountPlanes","tokens":5,"cat":"buffer"}];
+var trans = [{"name":"addTaxiWay_1","cat":"default"},{"name":"lockTaxiWay_1","cat":"lock"},{"name":"unlockTaxiWay_1","cat":"lock"},{"name":"addTaxiWay_2","cat":"default"},{"name":"lockTaxiWay_2","cat":"lock"},{"name":"unlockTaxiWay_2","cat":"lock"},{"name":"addTaxiWay_3","cat":"default"},{"name":"lockTaxiWay_3","cat":"lock"},{"name":"unlockTaxiWay_3","cat":"lock"},{"name":"landing_1","cat":"flight"},{"name":"lockTrack_1","cat":"lock"},{"name":"unlockTrack_1","cat":"lock"},{"name":"takeoff_1","cat":"flight"},{"name":"landing_2","cat":"flight"},{"name":"lockTrack_2","cat":"lock"},{"name":"unlockTrack_2","cat":"lock"},{"name":"takeoff_2","cat":"flight"},{"name":"landing_3","cat":"flight"},{"name":"lockTrack_3","cat":"lock"},{"name":"unlockTrack_3","cat":"lock"},{"name":"takeoff_3","cat":"flight"},{"name":"tw1_to_tr1","cat":"link"},{"name":"tw1_to_tr2","cat":"link"},{"name":"tw1_to_tr3","cat":"link"},{"name":"tw2_to_tr1","cat":"link"},{"name":"tw2_to_tr2","cat":"link"},{"name":"tw2_to_tr3","cat":"link"},{"name":"tw3_to_tr1","cat":"link"},{"name":"tw3_to_tr2","cat":"link"},{"name":"tw3_to_tr3","cat":"link"},{"name":"redirect_tw1_to_tw2","cat":"redirect"},{"name":"redirect_tw1_to_tw3","cat":"redirect"},{"name":"redirect_tw2_to_tw1","cat":"redirect"},{"name":"redirect_tw2_to_tw3","cat":"redirect"},{"name":"redirect_tw3_to_tw1","cat":"redirect"},{"name":"redirect_tw3_to_tw2","cat":"redirect"}];
+var arcs = [{"from":"T2","to":"P0","w":1,"type":"post"},{"from":"T21","to":"P0","w":1,"type":"post"},{"from":"T22","to":"P0","w":1,"type":"post"},{"from":"T23","to":"P0","w":1,"type":"post"},{"from":"T0","to":"P1","w":1,"type":"post"},{"from":"P1","to":"T1","w":1,"type":"pre"},{"from":"P1","to":"T21","w":1,"type":"pre"},{"from":"P1","to":"T22","w":1,"type":"pre"},{"from":"P1","to":"T23","w":1,"type":"pre"},{"from":"P1","to":"T30","w":1,"type":"pre"},{"from":"P1","to":"T31","w":1,"type":"pre"},{"from":"T32","to":"P1","w":1,"type":"post"},{"from":"T34","to":"P1","w":1,"type":"post"},{"from":"P2","to":"T0","w":1,"type":"selfloop"},{"from":"T2","to":"P2","w":1,"type":"post"},{"from":"P2","to":"T32","w":1,"type":"selfloop"},{"from":"P2","to":"T34","w":1,"type":"selfloop"},{"from":"T1","to":"P3","w":1,"type":"post"},{"from":"P3","to":"T2","w":1,"type":"pre"},{"from":"T5","to":"P4","w":1,"type":"post"},{"from":"T24","to":"P4","w":1,"type":"post"},{"from":"T25","to":"P4","w":1,"type":"post"},{"from":"T26","to":"P4","w":1,"type":"post"},{"from":"T3","to":"P5","w":1,"type":"post"},{"from":"P5","to":"T4","w":1,"type":"pre"},{"from":"P5","to":"T24","w":1,"type":"pre"},{"from":"P5","to":"T25","w":1,"type":"pre"},{"from":"P5","to":"T26","w":1,"type":"pre"},{"from":"T30","to":"P5","w":1,"type":"post"},{"from":"P5","to":"T32","w":1,"type":"pre"},{"from":"P5","to":"T33","w":1,"type":"pre"},{"from":"T35","to":"P5","w":1,"type":"post"},{"from":"P6","to":"T3","w":1,"type":"selfloop"},{"from":"T5","to":"P6","w":1,"type":"post"},{"from":"P6","to":"T30","w":1,"type":"selfloop"},{"from":"P6","to":"T35","w":1,"type":"selfloop"},{"from":"T4","to":"P7","w":1,"type":"post"},{"from":"P7","to":"T5","w":1,"type":"pre"},{"from":"T8","to":"P8","w":1,"type":"post"},{"from":"T27","to":"P8","w":1,"type":"post"},{"from":"T28","to":"P8","w":1,"type":"post"},{"from":"T29","to":"P8","w":1,"type":"post"},{"from":"T6","to":"P9","w":1,"type":"post"},{"from":"P9","to":"T7","w":1,"type":"pre"},{"from":"P9","to":"T27","w":1,"type":"pre"},{"from":"P9","to":"T28","w":1,"type":"pre"},{"from":"P9","to":"T29","w":1,"type":"pre"},{"from":"T31","to":"P9","w":1,"type":"post"},{"from":"T33","to":"P9","w":1,"type":"post"},{"from":"P9","to":"T34","w":1,"type":"pre"},{"from":"P9","to":"T35","w":1,"type":"pre"},{"from":"P10","to":"T6","w":1,"type":"selfloop"},{"from":"T8","to":"P10","w":1,"type":"post"},{"from":"P10","to":"T31","w":1,"type":"selfloop"},{"from":"P10","to":"T33","w":1,"type":"selfloop"},{"from":"T7","to":"P11","w":1,"type":"post"},{"from":"P11","to":"T8","w":1,"type":"pre"},{"from":"T11","to":"P12","w":1,"type":"post"},{"from":"P12","to":"T21","w":1,"type":"pre"},{"from":"P12","to":"T24","w":1,"type":"pre"},{"from":"P12","to":"T27","w":1,"type":"pre"},{"from":"T9","to":"P13","w":1,"type":"post"},{"from":"P13","to":"T10","w":1,"type":"pre"},{"from":"T21","to":"P13","w":1,"type":"post"},{"from":"T24","to":"P13","w":1,"type":"post"},{"from":"T27","to":"P13","w":1,"type":"post"},{"from":"P14","to":"T9","w":1,"type":"selfloop"},{"from":"T11","to":"P14","w":1,"type":"post"},{"from":"P14","to":"T12","w":1,"type":"selfloop"},{"from":"P14","to":"T21","w":1,"type":"selfloop"},{"from":"P14","to":"T24","w":1,"type":"selfloop"},{"from":"P14","to":"T27","w":1,"type":"selfloop"},{"from":"T10","to":"P15","w":1,"type":"post"},{"from":"P15","to":"T11","w":1,"type":"pre"},{"from":"T15","to":"P16","w":1,"type":"post"},{"from":"P16","to":"T22","w":1,"type":"pre"},{"from":"P16","to":"T25","w":1,"type":"pre"},{"from":"P16","to":"T28","w":1,"type":"pre"},{"from":"T13","to":"P17","w":1,"type":"post"},{"from":"P17","to":"T14","w":1,"type":"pre"},{"from":"T22","to":"P17","w":1,"type":"post"},{"from":"T25","to":"P17","w":1,"type":"post"},{"from":"T28","to":"P17","w":1,"type":"post"},{"from":"P18","to":"T13","w":1,"type":"selfloop"},{"from":"T15","to":"P18","w":1,"type":"post"},{"from":"P18","to":"T16","w":1,"type":"selfloop"},{"from":"P18","to":"T22","w":1,"type":"selfloop"},{"from":"P18","to":"T25","w":1,"type":"selfloop"},{"from":"P18","to":"T28","w":1,"type":"selfloop"},{"from":"T14","to":"P19","w":1,"type":"post"},{"from":"P19","to":"T15","w":1,"type":"pre"},{"from":"T19","to":"P20","w":1,"type":"post"},{"from":"P20","to":"T23","w":1,"type":"pre"},{"from":"P20","to":"T26","w":1,"type":"pre"},{"from":"P20","to":"T29","w":1,"type":"pre"},{"from":"T17","to":"P21","w":1,"type":"post"},{"from":"P21","to":"T18","w":1,"type":"pre"},{"from":"T23","to":"P21","w":1,"type":"post"},{"from":"T26","to":"P21","w":1,"type":"post"},{"from":"T29","to":"P21","w":1,"type":"post"},{"from":"P22","to":"T17","w":1,"type":"selfloop"},{"from":"T19","to":"P22","w":1,"type":"post"},{"from":"P22","to":"T20","w":1,"type":"selfloop"},{"from":"P22","to":"T23","w":1,"type":"selfloop"},{"from":"P22","to":"T26","w":1,"type":"selfloop"},{"from":"P22","to":"T29","w":1,"type":"selfloop"},{"from":"T18","to":"P23","w":1,"type":"post"},{"from":"P23","to":"T19","w":1,"type":"pre"},{"from":"T9","to":"P24","w":1,"type":"post"},{"from":"P24","to":"T12","w":1,"type":"pre"},{"from":"T13","to":"P24","w":1,"type":"post"},{"from":"P24","to":"T16","w":1,"type":"pre"},{"from":"T17","to":"P24","w":1,"type":"post"},{"from":"P24","to":"T20","w":1,"type":"pre"},{"from":"P25","to":"T9","w":1,"type":"pre"},{"from":"T12","to":"P25","w":1,"type":"post"},{"from":"P25","to":"T13","w":1,"type":"pre"},{"from":"T16","to":"P25","w":1,"type":"post"},{"from":"P25","to":"T17","w":1,"type":"pre"},{"from":"T20","to":"P25","w":1,"type":"post"}];
+document.getElementById('stats').textContent = places.length + ' places | ' + trans.length + ' transitions | ' + arcs.length + ' arcs';
+
+var svg = document.getElementById('svg');
+var W = window.innerWidth;
+var H = window.innerHeight - 48;
+
+var NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs) {
+  var e = document.createElementNS(NS, tag);
+  if (attrs) { for (var k in attrs) { if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]); } }
+  return e;
+}
+
+var pColors = {buffer:'#4CAF50',open:'#FFF9C4',close:'#EF9A9A',count:'#90CAF9','default':'#C8E6C9'};
+var tColors = {link:'#FFD54F',redirect:'#CE93D8',lock:'#FF8A65',flight:'#4FC3F7','default':'#A5D6A7'};
+
+function getGroupV2(name) {
+  var m = name.match(/_(\d+)$/);
+  if (!m) return 'global';
+  var num = m[1];
+  if (name.indexOf('TaxiWay') >= 0 || name.indexOf('TW_') >= 0) return 'TW_' + num;
+  if (name.indexOf('Track') >= 0 || name.indexOf('TR_') >= 0) return 'TR_' + num;
+  if (name.indexOf('BufferTaxiWay') >= 0) return 'TW_' + num;
+  if (name.indexOf('BufferTrack') >= 0) return 'TR_' + num;
+  return 'global';
+}
+
+var groupSet = {};
+places.forEach(function(p) { groupSet[getGroupV2(p.name)] = true; });
+trans.forEach(function(t) { groupSet[getGroupV2(t.name)] = true; });
+var groupList = Object.keys(groupSet).sort();
+
+var cx = W / 2, cy = H / 2;
+var groupPositions = {};
+var nGroups = groupList.length;
+var gIdx = 0;
+groupList.forEach(function(g) {
+  if (g === 'global') { groupPositions[g] = {x:cx, y:cy}; }
+  else {
+    var angle = (2 * Math.PI * gIdx) / Math.max(nGroups - 1, 1) - Math.PI / 2;
+    var radius = Math.min(W, H) * 0.35;
+    groupPositions[g] = {x: cx + Math.cos(angle)*radius, y: cy + Math.sin(angle)*radius};
+    gIdx++;
+  }
+});
+
+var nodePos = {};
+var nodesByGroup = {};
+var allNodes = [];
+places.forEach(function(p,i) { allNodes.push({id:'P'+i, name:p.name, group:getGroupV2(p.name)}); });
+trans.forEach(function(t,j) { allNodes.push({id:'T'+j, name:t.name, group:getGroupV2(t.name)}); });
+
+allNodes.forEach(function(n) {
+  if (!nodesByGroup[n.group]) nodesByGroup[n.group] = [];
+  nodesByGroup[n.group].push(n);
+});
+
+Object.keys(nodesByGroup).forEach(function(group) {
+  var nodes = nodesByGroup[group];
+  var gp = groupPositions[group];
+  var n = nodes.length;
+  var localR = 40 + n * 14;
+  nodes.forEach(function(node, i) {
+    var angle = (2 * Math.PI * i) / n - Math.PI / 2;
+    nodePos[node.id] = {x: gp.x + Math.cos(angle)*localR, y: gp.y + Math.sin(angle)*localR};
+  });
+});
+
+var defs = el('defs');
+var arrowTypes = [['pre','#ef5350'],['post','#42a5f5'],['selfloop','#66bb6a']];
+arrowTypes.forEach(function(at) {
+  var marker = el('marker', {id:'arrow-'+at[0], viewBox:'0 0 10 6', refX:'10', refY:'3',
+    markerWidth:'8', markerHeight:'6', orient:'auto-start-reverse'});
+  var path = el('path', {d:'M0,0 L10,3 L0,6 Z', fill:at[1]});
+  marker.appendChild(path); defs.appendChild(marker);
+});
+svg.appendChild(defs);
+
+var arcG = el('g');
+svg.appendChild(arcG);
+arcs.forEach(function(arc) {
+  var from = nodePos[arc.from]; var to = nodePos[arc.to];
+  if (!from || !to) return;
+  var attrs = {x1:from.x, y1:from.y, x2:to.x, y2:to.y, 'class':'arc ' + arc.type};
+  if (arc.type !== 'selfloop') attrs['marker-end'] = 'url(#arrow-' + arc.type + ')';
+  arcG.appendChild(el('line', attrs));
+});
+
+places.forEach(function(p, i) {
+  var pos = nodePos['P' + i]; if (!pos) return;
+  var g = el('g', {'class':'place', transform:'translate('+pos.x+','+pos.y+')'});
+  g.appendChild(el('circle', {r:20, fill:pColors[p.cat]||pColors['default'], stroke:'#555', 'stroke-width':1.5}));
+  var tok = el('text', {'class':'token', y:4}); tok.textContent = p.tokens; g.appendChild(tok);
+  var lbl = el('text', {'class':'pname', y:32}); lbl.textContent = p.name; g.appendChild(lbl);
+  g.onmouseover = function(e) { showTip(e, 'Place: ' + p.name + ' | Tokens: ' + p.tokens); };
+  g.onmouseout = hideTip;
+  svg.appendChild(g);
+});
+
+trans.forEach(function(t, j) {
+  var pos = nodePos['T' + j]; if (!pos) return;
+  var g = el('g', {'class':'trans', transform:'translate('+pos.x+','+pos.y+')'});
+  g.appendChild(el('rect', {x:-24, y:-10, width:48, height:20, rx:3,
+    fill:tColors[t.cat]||tColors['default'], stroke:'#555', 'stroke-width':1}));
+  var lbl = el('text', {'class':'tname', y:3}); lbl.textContent = t.name; g.appendChild(lbl);
+  g.onmouseover = function(e) { showTip(e, 'Transition: ' + t.name); };
+  g.onmouseout = hideTip;
+  svg.appendChild(g);
+});
+
+var tipEl = document.getElementById('tooltip');
+function showTip(e, text) {
+  tipEl.textContent = text; tipEl.style.display = 'block';
+  tipEl.style.left = (e.clientX + 15) + 'px'; tipEl.style.top = (e.clientY + 15) + 'px';
+}
+function hideTip() { tipEl.style.display = 'none'; }
+
+var vb = {x:0, y:0, w:W, h:H};
+svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
+var panning = false, panStart = {x:0, y:0};
+svg.onmousedown = function(e) { panning = true; panStart = {x:e.clientX, y:e.clientY}; };
+svg.onmousemove = function(e) {
+  if (!panning) return;
+  var dx = (e.clientX - panStart.x) * (vb.w / W);
+  var dy = (e.clientY - panStart.y) * (vb.h / H);
+  vb.x -= dx; vb.y -= dy;
+  svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
+  panStart = {x:e.clientX, y:e.clientY};
+};
+svg.onmouseup = function() { panning = false; };
+svg.onmouseleave = function() { panning = false; };
+svg.onwheel = function(e) {
+  e.preventDefault();
+  var scale = e.deltaY > 0 ? 1.1 : 0.9;
+  var mx = vb.x + (e.clientX / W) * vb.w;
+  var my = vb.y + ((e.clientY - 48) / H) * vb.h;
+  vb.w *= scale; vb.h *= scale;
+  vb.x = mx - (e.clientX / W) * vb.w;
+  vb.y = my - ((e.clientY - 48) / H) * vb.h;
+  svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
+};
+
+</script>
+</body>
+</html>
