@@ -1,204 +1,285 @@
 <!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>CY-SKY Aeroport</title>
+<html lang="fr"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CY-SKY Orly</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#1a1a2e; color:#e0e0e0; font-family:Consolas,monospace; overflow:hidden; }
-  #header { position:fixed; top:0; left:0; right:0; height:48px; background:#16213e;
-            display:flex; align-items:center; padding:0 20px; z-index:10;
-            border-bottom:1px solid #0f3460; }
-  #header h1 { font-size:16px; color:#4fc3f7; }
-  #header .stats { margin-left:auto; font-size:12px; color:#888; }
-  #canvas { position:fixed; top:48px; left:0; right:0; bottom:0; }
-  svg { width:100%; height:100%; }
-  .place { cursor:pointer; }
-  .place:hover circle { stroke:#fff; stroke-width:3; }
-  .trans { cursor:pointer; }
-  .trans:hover rect { stroke:#fff; stroke-width:2; }
-  .arc { fill:none; stroke-width:1.5; }
-  .arc.pre { stroke:#ef5350; }
-  .arc.post { stroke:#42a5f5; }
-  .arc.selfloop { stroke:#66bb6a; stroke-dasharray:6,3; }
-  .token { font-size:11px; fill:#fff; text-anchor:middle; font-weight:bold; pointer-events:none; }
-  .pname { font-size:8px; fill:#ccc; text-anchor:middle; pointer-events:none; }
-  .tname { font-size:7px; fill:#333; text-anchor:middle; pointer-events:none; }
-  #legend { position:fixed; bottom:10px; left:10px; background:#16213e; padding:10px;
-            border-radius:6px; font-size:11px; border:1px solid #0f3460; }
-  #legend div { margin:3px 0; display:flex; align-items:center; gap:8px; }
-  .ldot { width:12px; height:12px; border-radius:50%; display:inline-block; }
-  .lsq { width:12px; height:12px; display:inline-block; }
-  #tooltip { position:fixed; background:#16213e; border:1px solid #4fc3f7; padding:8px 12px;
-             border-radius:4px; font-size:11px; display:none; pointer-events:none; z-index:20; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Helvetica,Arial,sans-serif;background:#0f0f1a;color:#ddd}
+.hd{padding:16px 20px 10px;border-bottom:1px solid #252540}
+.hd h1{font-size:18px;font-weight:500;color:#64ffda}
+.hd p{font-size:12px;color:#777;margin-top:3px}
+.tabs{display:flex;border-bottom:1px solid #252540;padding:0 20px}
+.tab{padding:9px 18px;font-size:13px;color:#777;cursor:pointer;background:none;border:none;border-bottom:2px solid transparent}
+.tab:hover{color:#bbb}
+.tab.a{color:#64ffda;border-color:#64ffda}
+.pn{display:none}.pn.a{display:block}
+canvas{display:block;width:100%;background:#10102a}
+.leg{display:flex;gap:14px;padding:6px 20px;font-size:11px;color:#666;flex-wrap:wrap;border-bottom:1px solid #252540}
+.leg span{display:flex;align-items:center;gap:3px}
+.d{width:11px;height:11px;border-radius:50%;border:1.5px solid;display:inline-block}
+.s{width:11px;height:11px;border-radius:2px;border:1.5px solid;display:inline-block}
+.mat{padding:20px;overflow-x:auto}
+h3{font-size:14px;font-weight:500;color:#64ffda;margin:16px 0 6px}
+h3:first-child{margin-top:0}
+.tw{overflow-x:auto;margin-bottom:12px}
+.tw table{border-collapse:collapse;font-size:11px}
+.tw td,.tw th{border:1px solid #252540;padding:3px 5px;text-align:center;white-space:nowrap}
+.th{background:#1a1a30;color:#ba7517}
+.pl{background:#0c1f14;color:#5dcaa5;text-align:left;position:sticky;left:0}
+.nz{color:#64ffda;font-weight:bold}
+.mks{margin:6px 0 16px;display:flex;flex-wrap:wrap;gap:5px}
+.mk{font-size:11px;padding:3px 8px;border-radius:5px;background:#1a1a30;border:1px solid #252540}
+.ht{background:#0c1f14;border-color:#0F6E56;color:#5dcaa5}
+.sts{display:flex;gap:10px;padding:12px 20px;flex-wrap:wrap}
+.st{background:#1a1a30;border-radius:6px;padding:10px 16px;text-align:center;min-width:80px}
+.sv{display:block;font-size:20px;font-weight:500;color:#64ffda}
+.sl{display:block;font-size:10px;color:#777;margin-top:2px}
 </style>
-</head>
-<body>
-<div id="header">
-  <h1>CY-SKY Aeroport</h1>
-  <div class="stats" id="stats"></div>
+</head><body>
+<div class="hd"><h1>CY-SKY Orly</h1>
+<p>30 places | 41 transitions | 30 self-loops | 143 arcs</p></div>
+<div class="tabs">
+<button class="tab a" onclick="stab('g',this)">Reseau de Petri</button>
+<button class="tab" onclick="stab('m',this)">Matrices</button>
 </div>
-<div id="canvas"><svg id="svg"></svg></div>
-<div id="legend">
-  <div><span class="ldot" style="background:#4CAF50"></span> Buffer</div>
-  <div><span class="ldot" style="background:#FFF9C4;border:1px solid #888"></span> Open</div>
-  <div><span class="ldot" style="background:#EF9A9A"></span> Close</div>
-  <div><span class="ldot" style="background:#90CAF9"></span> Count</div>
-  <div style="margin-top:6px"><span class="lsq" style="background:#FFD54F"></span> TW-TR</div>
-  <div><span class="lsq" style="background:#CE93D8"></span> Redirect</div>
-  <div><span class="lsq" style="background:#FF8A65"></span> Lock/Unlock</div>
-  <div><span class="lsq" style="background:#4FC3F7"></span> Landing/Takeoff</div>
-  <div style="margin-top:6px;color:#ef5350">--- Pre arc</div>
-  <div style="color:#42a5f5">--- Post arc</div>
-  <div style="color:#66bb6a">- - Self-loop</div>
+<div class="pn a" id="g">
+<div class="leg">
+<span><span class="d" style="background:#E1F5EE;border-color:#0F6E56"></span>Place</span>
+<span><span class="d" style="background:#EAF3DE;border-color:#3B6D11"></span>Buffer</span>
+<span><span class="d" style="background:#E6F1FB;border-color:#185FA5"></span>Open</span>
+<span><span class="d" style="background:#FCEBEB;border-color:#A32D2D"></span>Close</span>
+<span><span class="s" style="background:#FAEEDA;border-color:#BA7517"></span>Transition</span>
+<span style="color:#7F77DD">--- Self-loop</span>
 </div>
-<div id="tooltip"></div>
+<canvas id="cv"></canvas>
+</div>
+<div class="pn" id="m">
+<div class="sts">
+<div class="st"><span class="sv">30</span><span class="sl">places</span></div>
+<div class="st"><span class="sv">41</span><span class="sl">transitions</span></div>
+<div class="st"><span class="sv">30</span><span class="sl">self-loops</span></div>
+<div class="st"><span class="sv">143</span><span class="sl">arcs</span></div>
+</div>
+<div class="mat">
+<h3>Marquage initial</h3>
+<div class="mks"><span class='mk ht'>BufferGarage = 5</span> <span class='mk ht'>Garage = 5</span> <span class='mk ht'>G_open = 1</span> <span class='mk'>G_close = 0</span> <span class='mk ht'>BufferTaxiWay_1 = 5</span> <span class='mk'>TaxiWay_1 = 0</span> <span class='mk ht'>TW_open_1 = 1</span> <span class='mk'>TW_close_1 = 0</span> <span class='mk ht'>BufferTaxiWay_2 = 5</span> <span class='mk'>TaxiWay_2 = 0</span> <span class='mk ht'>TW_open_2 = 1</span> <span class='mk'>TW_close_2 = 0</span> <span class='mk ht'>BufferTaxiWay_3 = 5</span> <span class='mk'>TaxiWay_3 = 0</span> <span class='mk ht'>TW_open_3 = 1</span> <span class='mk'>TW_close_3 = 0</span> <span class='mk ht'>BufferTrack_1 = 5</span> <span class='mk'>Track_1 = 0</span> <span class='mk ht'>TR_open_1 = 1</span> <span class='mk'>TR_close_1 = 0</span> <span class='mk ht'>BufferTrack_2 = 5</span> <span class='mk'>Track_2 = 0</span> <span class='mk ht'>TR_open_2 = 1</span> <span class='mk'>TR_close_2 = 0</span> <span class='mk ht'>BufferTrack_3 = 5</span> <span class='mk'>Track_3 = 0</span> <span class='mk ht'>TR_open_3 = 1</span> <span class='mk'>TR_close_3 = 0</span> <span class='mk ht'>countPlanes = 5</span> <span class='mk ht'>BufferCountPlanes = 5</span></div>
+<h3>Matrice Pre</h3><div class='tw'><table><tr><th></th><th class='th'>T0<br><small>lockGarage</small></th><th class='th'>T1<br><small>unlockGarage</small></th><th class='th'>T2<br><small>addTaxiWay_1</small></th><th class='th'>T3<br><small>lockTaxiWay_1</small></th><th class='th'>T4<br><small>unlockTaxiWay_1</small></th><th class='th'>T5<br><small>addTaxiWay_2</small></th><th class='th'>T6<br><small>lockTaxiWay_2</small></th><th class='th'>T7<br><small>unlockTaxiWay_2</small></th><th class='th'>T8<br><small>addTaxiWay_3</small></th><th class='th'>T9<br><small>lockTaxiWay_3</small></th><th class='th'>T10<br><small>unlockTaxiWay_3</small></th><th class='th'>T11<br><small>landing_1</small></th><th class='th'>T12<br><small>lockTrack_1</small></th><th class='th'>T13<br><small>unlockTrack_1</small></th><th class='th'>T14<br><small>takeoff_1</small></th><th class='th'>T15<br><small>landing_2</small></th><th class='th'>T16<br><small>lockTrack_2</small></th><th class='th'>T17<br><small>unlockTrack_2</small></th><th class='th'>T18<br><small>takeoff_2</small></th><th class='th'>T19<br><small>landing_3</small></th><th class='th'>T20<br><small>lockTrack_3</small></th><th class='th'>T21<br><small>unlockTrack_3</small></th><th class='th'>T22<br><small>takeoff_3</small></th><th class='th'>T23<br><small>garage_to_tw1</small></th><th class='th'>T24<br><small>garage_to_tw2</small></th><th class='th'>T25<br><small>garage_to_tw3</small></th><th class='th'>T26<br><small>tw1_to_tr1</small></th><th class='th'>T27<br><small>tw1_to_tr2</small></th><th class='th'>T28<br><small>tw1_to_tr3</small></th><th class='th'>T29<br><small>tw2_to_tr1</small></th><th class='th'>T30<br><small>tw2_to_tr2</small></th><th class='th'>T31<br><small>tw2_to_tr3</small></th><th class='th'>T32<br><small>tw3_to_tr1</small></th><th class='th'>T33<br><small>tw3_to_tr2</small></th><th class='th'>T34<br><small>tw3_to_tr3</small></th><th class='th'>T35<br><small>redirect_tw1_to_tw2</small></th><th class='th'>T36<br><small>redirect_tw1_to_tw3</small></th><th class='th'>T37<br><small>redirect_tw2_to_tw1</small></th><th class='th'>T38<br><small>redirect_tw2_to_tw3</small></th><th class='th'>T39<br><small>redirect_tw3_to_tw1</small></th><th class='th'>T40<br><small>redirect_tw3_to_tw2</small></th></tr>
+<tr><td class='pl'>P0 BufferGarage [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P1 Garage [5]</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P2 G_open [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P3 G_close [0]</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P4 BufferTaxiWay_1 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P5 TaxiWay_1 [0]</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P6 TW_open_1 [1]</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td></tr>
+<tr><td class='pl'>P7 TW_close_1 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P8 BufferTaxiWay_2 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P9 TaxiWay_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P10 TW_open_2 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td></tr>
+<tr><td class='pl'>P11 TW_close_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P12 BufferTaxiWay_3 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P13 TaxiWay_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td></tr>
+<tr><td class='pl'>P14 TW_open_3 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P15 TW_close_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P16 BufferTrack_1 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P17 Track_1 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P18 TR_open_1 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P19 TR_close_1 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P20 BufferTrack_2 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P21 Track_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P22 TR_open_2 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P23 TR_close_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P24 BufferTrack_3 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P25 Track_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P26 TR_open_3 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P27 TR_close_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P28 countPlanes [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P29 BufferCountPlanes [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr></table></div><h3>Matrice Post</h3><div class='tw'><table><tr><th></th><th class='th'>T0<br><small>lockGarage</small></th><th class='th'>T1<br><small>unlockGarage</small></th><th class='th'>T2<br><small>addTaxiWay_1</small></th><th class='th'>T3<br><small>lockTaxiWay_1</small></th><th class='th'>T4<br><small>unlockTaxiWay_1</small></th><th class='th'>T5<br><small>addTaxiWay_2</small></th><th class='th'>T6<br><small>lockTaxiWay_2</small></th><th class='th'>T7<br><small>unlockTaxiWay_2</small></th><th class='th'>T8<br><small>addTaxiWay_3</small></th><th class='th'>T9<br><small>lockTaxiWay_3</small></th><th class='th'>T10<br><small>unlockTaxiWay_3</small></th><th class='th'>T11<br><small>landing_1</small></th><th class='th'>T12<br><small>lockTrack_1</small></th><th class='th'>T13<br><small>unlockTrack_1</small></th><th class='th'>T14<br><small>takeoff_1</small></th><th class='th'>T15<br><small>landing_2</small></th><th class='th'>T16<br><small>lockTrack_2</small></th><th class='th'>T17<br><small>unlockTrack_2</small></th><th class='th'>T18<br><small>takeoff_2</small></th><th class='th'>T19<br><small>landing_3</small></th><th class='th'>T20<br><small>lockTrack_3</small></th><th class='th'>T21<br><small>unlockTrack_3</small></th><th class='th'>T22<br><small>takeoff_3</small></th><th class='th'>T23<br><small>garage_to_tw1</small></th><th class='th'>T24<br><small>garage_to_tw2</small></th><th class='th'>T25<br><small>garage_to_tw3</small></th><th class='th'>T26<br><small>tw1_to_tr1</small></th><th class='th'>T27<br><small>tw1_to_tr2</small></th><th class='th'>T28<br><small>tw1_to_tr3</small></th><th class='th'>T29<br><small>tw2_to_tr1</small></th><th class='th'>T30<br><small>tw2_to_tr2</small></th><th class='th'>T31<br><small>tw2_to_tr3</small></th><th class='th'>T32<br><small>tw3_to_tr1</small></th><th class='th'>T33<br><small>tw3_to_tr2</small></th><th class='th'>T34<br><small>tw3_to_tr3</small></th><th class='th'>T35<br><small>redirect_tw1_to_tw2</small></th><th class='th'>T36<br><small>redirect_tw1_to_tw3</small></th><th class='th'>T37<br><small>redirect_tw2_to_tw1</small></th><th class='th'>T38<br><small>redirect_tw2_to_tw3</small></th><th class='th'>T39<br><small>redirect_tw3_to_tw1</small></th><th class='th'>T40<br><small>redirect_tw3_to_tw2</small></th></tr>
+<tr><td class='pl'>P0 BufferGarage [5]</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P1 Garage [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P2 G_open [1]</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P3 G_close [0]</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P4 BufferTaxiWay_1 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P5 TaxiWay_1 [0]</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td></tr>
+<tr><td class='pl'>P6 TW_open_1 [1]</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td></tr>
+<tr><td class='pl'>P7 TW_close_1 [0]</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P8 BufferTaxiWay_2 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P9 TaxiWay_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td></tr>
+<tr><td class='pl'>P10 TW_open_2 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td></tr>
+<tr><td class='pl'>P11 TW_close_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P12 BufferTaxiWay_3 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P13 TaxiWay_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P14 TW_open_3 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P15 TW_close_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P16 BufferTrack_1 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P17 Track_1 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P18 TR_open_1 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P19 TR_close_1 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P20 BufferTrack_2 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P21 Track_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P22 TR_open_2 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P23 TR_close_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P24 BufferTrack_3 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P25 Track_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P26 TR_open_3 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P27 TR_close_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P28 countPlanes [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P29 BufferCountPlanes [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr></table></div><h3>Matrice C = Post - Pre</h3><div class='tw'><table><tr><th></th><th class='th'>T0<br><small>lockGarage</small></th><th class='th'>T1<br><small>unlockGarage</small></th><th class='th'>T2<br><small>addTaxiWay_1</small></th><th class='th'>T3<br><small>lockTaxiWay_1</small></th><th class='th'>T4<br><small>unlockTaxiWay_1</small></th><th class='th'>T5<br><small>addTaxiWay_2</small></th><th class='th'>T6<br><small>lockTaxiWay_2</small></th><th class='th'>T7<br><small>unlockTaxiWay_2</small></th><th class='th'>T8<br><small>addTaxiWay_3</small></th><th class='th'>T9<br><small>lockTaxiWay_3</small></th><th class='th'>T10<br><small>unlockTaxiWay_3</small></th><th class='th'>T11<br><small>landing_1</small></th><th class='th'>T12<br><small>lockTrack_1</small></th><th class='th'>T13<br><small>unlockTrack_1</small></th><th class='th'>T14<br><small>takeoff_1</small></th><th class='th'>T15<br><small>landing_2</small></th><th class='th'>T16<br><small>lockTrack_2</small></th><th class='th'>T17<br><small>unlockTrack_2</small></th><th class='th'>T18<br><small>takeoff_2</small></th><th class='th'>T19<br><small>landing_3</small></th><th class='th'>T20<br><small>lockTrack_3</small></th><th class='th'>T21<br><small>unlockTrack_3</small></th><th class='th'>T22<br><small>takeoff_3</small></th><th class='th'>T23<br><small>garage_to_tw1</small></th><th class='th'>T24<br><small>garage_to_tw2</small></th><th class='th'>T25<br><small>garage_to_tw3</small></th><th class='th'>T26<br><small>tw1_to_tr1</small></th><th class='th'>T27<br><small>tw1_to_tr2</small></th><th class='th'>T28<br><small>tw1_to_tr3</small></th><th class='th'>T29<br><small>tw2_to_tr1</small></th><th class='th'>T30<br><small>tw2_to_tr2</small></th><th class='th'>T31<br><small>tw2_to_tr3</small></th><th class='th'>T32<br><small>tw3_to_tr1</small></th><th class='th'>T33<br><small>tw3_to_tr2</small></th><th class='th'>T34<br><small>tw3_to_tr3</small></th><th class='th'>T35<br><small>redirect_tw1_to_tw2</small></th><th class='th'>T36<br><small>redirect_tw1_to_tw3</small></th><th class='th'>T37<br><small>redirect_tw2_to_tw1</small></th><th class='th'>T38<br><small>redirect_tw2_to_tw3</small></th><th class='th'>T39<br><small>redirect_tw3_to_tw1</small></th><th class='th'>T40<br><small>redirect_tw3_to_tw2</small></th></tr>
+<tr><td class='pl'>P0 BufferGarage [5]</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P1 Garage [5]</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td class='nz'>-1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P2 G_open [1]</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P3 G_close [0]</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P4 BufferTaxiWay_1 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P5 TaxiWay_1 [0]</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>-1</td><td class='nz'>-1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td class='nz'>-1</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td>0</td></tr>
+<tr><td class='pl'>P6 TW_open_1 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P7 TW_close_1 [0]</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P8 BufferTaxiWay_2 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P9 TaxiWay_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td class='nz'>-1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>-1</td><td class='nz'>-1</td><td>0</td><td class='nz'>1</td></tr>
+<tr><td class='pl'>P10 TW_open_2 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P11 TW_close_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P12 BufferTaxiWay_3 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>1</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P13 TaxiWay_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td class='nz'>-1</td><td class='nz'>-1</td><td>0</td><td class='nz'>1</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td class='nz'>-1</td></tr>
+<tr><td class='pl'>P14 TW_open_3 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P15 TW_close_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P16 BufferTrack_1 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P17 Track_1 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P18 TR_open_1 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P19 TR_close_1 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P20 BufferTrack_2 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P21 Track_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P22 TR_open_2 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P23 TR_close_2 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P24 BufferTrack_3 [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P25 Track_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P26 TR_open_3 [1]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P27 TR_close_3 [0]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P28 countPlanes [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>-1</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>-1</td><td class='nz'>1</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td class='pl'>P29 BufferCountPlanes [5]</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>1</td><td class='nz'>-1</td><td>0</td><td>0</td><td class='nz'>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr></table></div>
+</div>
+</div>
 <script>
-var places = [{"name":"BufferTaxiWay_1","tokens":5,"cat":"buffer"},{"name":"TaxiWay_1","tokens":0,"cat":"default"},{"name":"TW_open_1","tokens":1,"cat":"open"},{"name":"TW_close_1","tokens":0,"cat":"close"},{"name":"BufferTaxiWay_2","tokens":5,"cat":"buffer"},{"name":"TaxiWay_2","tokens":0,"cat":"default"},{"name":"TW_open_2","tokens":1,"cat":"open"},{"name":"TW_close_2","tokens":0,"cat":"close"},{"name":"BufferTaxiWay_3","tokens":5,"cat":"buffer"},{"name":"TaxiWay_3","tokens":0,"cat":"default"},{"name":"TW_open_3","tokens":1,"cat":"open"},{"name":"TW_close_3","tokens":0,"cat":"close"},{"name":"BufferTrack_1","tokens":5,"cat":"buffer"},{"name":"Track_1","tokens":0,"cat":"default"},{"name":"TR_open_1","tokens":1,"cat":"open"},{"name":"TR_close_1","tokens":0,"cat":"close"},{"name":"BufferTrack_2","tokens":5,"cat":"buffer"},{"name":"Track_2","tokens":0,"cat":"default"},{"name":"TR_open_2","tokens":1,"cat":"open"},{"name":"TR_close_2","tokens":0,"cat":"close"},{"name":"BufferTrack_3","tokens":5,"cat":"buffer"},{"name":"Track_3","tokens":0,"cat":"default"},{"name":"TR_open_3","tokens":1,"cat":"open"},{"name":"TR_close_3","tokens":0,"cat":"close"},{"name":"countPlanes","tokens":5,"cat":"count"},{"name":"BufferCountPlanes","tokens":5,"cat":"buffer"}];
-var trans = [{"name":"addTaxiWay_1","cat":"default"},{"name":"lockTaxiWay_1","cat":"lock"},{"name":"unlockTaxiWay_1","cat":"lock"},{"name":"addTaxiWay_2","cat":"default"},{"name":"lockTaxiWay_2","cat":"lock"},{"name":"unlockTaxiWay_2","cat":"lock"},{"name":"addTaxiWay_3","cat":"default"},{"name":"lockTaxiWay_3","cat":"lock"},{"name":"unlockTaxiWay_3","cat":"lock"},{"name":"landing_1","cat":"flight"},{"name":"lockTrack_1","cat":"lock"},{"name":"unlockTrack_1","cat":"lock"},{"name":"takeoff_1","cat":"flight"},{"name":"landing_2","cat":"flight"},{"name":"lockTrack_2","cat":"lock"},{"name":"unlockTrack_2","cat":"lock"},{"name":"takeoff_2","cat":"flight"},{"name":"landing_3","cat":"flight"},{"name":"lockTrack_3","cat":"lock"},{"name":"unlockTrack_3","cat":"lock"},{"name":"takeoff_3","cat":"flight"},{"name":"tw1_to_tr1","cat":"link"},{"name":"tw1_to_tr2","cat":"link"},{"name":"tw1_to_tr3","cat":"link"},{"name":"tw2_to_tr1","cat":"link"},{"name":"tw2_to_tr2","cat":"link"},{"name":"tw2_to_tr3","cat":"link"},{"name":"tw3_to_tr1","cat":"link"},{"name":"tw3_to_tr2","cat":"link"},{"name":"tw3_to_tr3","cat":"link"},{"name":"redirect_tw1_to_tw2","cat":"redirect"},{"name":"redirect_tw1_to_tw3","cat":"redirect"},{"name":"redirect_tw2_to_tw1","cat":"redirect"},{"name":"redirect_tw2_to_tw3","cat":"redirect"},{"name":"redirect_tw3_to_tw1","cat":"redirect"},{"name":"redirect_tw3_to_tw2","cat":"redirect"}];
-var arcs = [{"from":"T2","to":"P0","w":1,"type":"post"},{"from":"T21","to":"P0","w":1,"type":"post"},{"from":"T22","to":"P0","w":1,"type":"post"},{"from":"T23","to":"P0","w":1,"type":"post"},{"from":"T0","to":"P1","w":1,"type":"post"},{"from":"P1","to":"T1","w":1,"type":"pre"},{"from":"P1","to":"T21","w":1,"type":"pre"},{"from":"P1","to":"T22","w":1,"type":"pre"},{"from":"P1","to":"T23","w":1,"type":"pre"},{"from":"P1","to":"T30","w":1,"type":"pre"},{"from":"P1","to":"T31","w":1,"type":"pre"},{"from":"T32","to":"P1","w":1,"type":"post"},{"from":"T34","to":"P1","w":1,"type":"post"},{"from":"P2","to":"T0","w":1,"type":"selfloop"},{"from":"T2","to":"P2","w":1,"type":"post"},{"from":"P2","to":"T32","w":1,"type":"selfloop"},{"from":"P2","to":"T34","w":1,"type":"selfloop"},{"from":"T1","to":"P3","w":1,"type":"post"},{"from":"P3","to":"T2","w":1,"type":"pre"},{"from":"T5","to":"P4","w":1,"type":"post"},{"from":"T24","to":"P4","w":1,"type":"post"},{"from":"T25","to":"P4","w":1,"type":"post"},{"from":"T26","to":"P4","w":1,"type":"post"},{"from":"T3","to":"P5","w":1,"type":"post"},{"from":"P5","to":"T4","w":1,"type":"pre"},{"from":"P5","to":"T24","w":1,"type":"pre"},{"from":"P5","to":"T25","w":1,"type":"pre"},{"from":"P5","to":"T26","w":1,"type":"pre"},{"from":"T30","to":"P5","w":1,"type":"post"},{"from":"P5","to":"T32","w":1,"type":"pre"},{"from":"P5","to":"T33","w":1,"type":"pre"},{"from":"T35","to":"P5","w":1,"type":"post"},{"from":"P6","to":"T3","w":1,"type":"selfloop"},{"from":"T5","to":"P6","w":1,"type":"post"},{"from":"P6","to":"T30","w":1,"type":"selfloop"},{"from":"P6","to":"T35","w":1,"type":"selfloop"},{"from":"T4","to":"P7","w":1,"type":"post"},{"from":"P7","to":"T5","w":1,"type":"pre"},{"from":"T8","to":"P8","w":1,"type":"post"},{"from":"T27","to":"P8","w":1,"type":"post"},{"from":"T28","to":"P8","w":1,"type":"post"},{"from":"T29","to":"P8","w":1,"type":"post"},{"from":"T6","to":"P9","w":1,"type":"post"},{"from":"P9","to":"T7","w":1,"type":"pre"},{"from":"P9","to":"T27","w":1,"type":"pre"},{"from":"P9","to":"T28","w":1,"type":"pre"},{"from":"P9","to":"T29","w":1,"type":"pre"},{"from":"T31","to":"P9","w":1,"type":"post"},{"from":"T33","to":"P9","w":1,"type":"post"},{"from":"P9","to":"T34","w":1,"type":"pre"},{"from":"P9","to":"T35","w":1,"type":"pre"},{"from":"P10","to":"T6","w":1,"type":"selfloop"},{"from":"T8","to":"P10","w":1,"type":"post"},{"from":"P10","to":"T31","w":1,"type":"selfloop"},{"from":"P10","to":"T33","w":1,"type":"selfloop"},{"from":"T7","to":"P11","w":1,"type":"post"},{"from":"P11","to":"T8","w":1,"type":"pre"},{"from":"T11","to":"P12","w":1,"type":"post"},{"from":"P12","to":"T21","w":1,"type":"pre"},{"from":"P12","to":"T24","w":1,"type":"pre"},{"from":"P12","to":"T27","w":1,"type":"pre"},{"from":"T9","to":"P13","w":1,"type":"post"},{"from":"P13","to":"T10","w":1,"type":"pre"},{"from":"T21","to":"P13","w":1,"type":"post"},{"from":"T24","to":"P13","w":1,"type":"post"},{"from":"T27","to":"P13","w":1,"type":"post"},{"from":"P14","to":"T9","w":1,"type":"selfloop"},{"from":"T11","to":"P14","w":1,"type":"post"},{"from":"P14","to":"T12","w":1,"type":"selfloop"},{"from":"P14","to":"T21","w":1,"type":"selfloop"},{"from":"P14","to":"T24","w":1,"type":"selfloop"},{"from":"P14","to":"T27","w":1,"type":"selfloop"},{"from":"T10","to":"P15","w":1,"type":"post"},{"from":"P15","to":"T11","w":1,"type":"pre"},{"from":"T15","to":"P16","w":1,"type":"post"},{"from":"P16","to":"T22","w":1,"type":"pre"},{"from":"P16","to":"T25","w":1,"type":"pre"},{"from":"P16","to":"T28","w":1,"type":"pre"},{"from":"T13","to":"P17","w":1,"type":"post"},{"from":"P17","to":"T14","w":1,"type":"pre"},{"from":"T22","to":"P17","w":1,"type":"post"},{"from":"T25","to":"P17","w":1,"type":"post"},{"from":"T28","to":"P17","w":1,"type":"post"},{"from":"P18","to":"T13","w":1,"type":"selfloop"},{"from":"T15","to":"P18","w":1,"type":"post"},{"from":"P18","to":"T16","w":1,"type":"selfloop"},{"from":"P18","to":"T22","w":1,"type":"selfloop"},{"from":"P18","to":"T25","w":1,"type":"selfloop"},{"from":"P18","to":"T28","w":1,"type":"selfloop"},{"from":"T14","to":"P19","w":1,"type":"post"},{"from":"P19","to":"T15","w":1,"type":"pre"},{"from":"T19","to":"P20","w":1,"type":"post"},{"from":"P20","to":"T23","w":1,"type":"pre"},{"from":"P20","to":"T26","w":1,"type":"pre"},{"from":"P20","to":"T29","w":1,"type":"pre"},{"from":"T17","to":"P21","w":1,"type":"post"},{"from":"P21","to":"T18","w":1,"type":"pre"},{"from":"T23","to":"P21","w":1,"type":"post"},{"from":"T26","to":"P21","w":1,"type":"post"},{"from":"T29","to":"P21","w":1,"type":"post"},{"from":"P22","to":"T17","w":1,"type":"selfloop"},{"from":"T19","to":"P22","w":1,"type":"post"},{"from":"P22","to":"T20","w":1,"type":"selfloop"},{"from":"P22","to":"T23","w":1,"type":"selfloop"},{"from":"P22","to":"T26","w":1,"type":"selfloop"},{"from":"P22","to":"T29","w":1,"type":"selfloop"},{"from":"T18","to":"P23","w":1,"type":"post"},{"from":"P23","to":"T19","w":1,"type":"pre"},{"from":"T9","to":"P24","w":1,"type":"post"},{"from":"P24","to":"T12","w":1,"type":"pre"},{"from":"T13","to":"P24","w":1,"type":"post"},{"from":"P24","to":"T16","w":1,"type":"pre"},{"from":"T17","to":"P24","w":1,"type":"post"},{"from":"P24","to":"T20","w":1,"type":"pre"},{"from":"P25","to":"T9","w":1,"type":"pre"},{"from":"T12","to":"P25","w":1,"type":"post"},{"from":"P25","to":"T13","w":1,"type":"pre"},{"from":"T16","to":"P25","w":1,"type":"post"},{"from":"P25","to":"T17","w":1,"type":"pre"},{"from":"T20","to":"P25","w":1,"type":"post"}];
-document.getElementById('stats').textContent = places.length + ' places | ' + trans.length + ' transitions | ' + arcs.length + ' arcs';
-
-var svg = document.getElementById('svg');
-var W = window.innerWidth;
-var H = window.innerHeight - 48;
-
-var NS = 'http://www.w3.org/2000/svg';
-function el(tag, attrs) {
-  var e = document.createElementNS(NS, tag);
-  if (attrs) { for (var k in attrs) { if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]); } }
-  return e;
+function stab(id,btn){
+  document.querySelectorAll('.pn').forEach(function(p){p.classList.remove('a')});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('a')});
+  document.getElementById(id).classList.add('a');
+  btn.classList.add('a');
+  if(id==='g') render();
 }
 
-var pColors = {buffer:'#4CAF50',open:'#FFF9C4',close:'#EF9A9A',count:'#90CAF9','default':'#C8E6C9'};
-var tColors = {link:'#FFD54F',redirect:'#CE93D8',lock:'#FF8A65',flight:'#4FC3F7','default':'#A5D6A7'};
+var nodes=[{"id":"p0","label":"BufferGarage","tokens":5,"type":"place","x":60.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"p1","label":"Garage","tokens":5,"type":"place","x":95.0,"y":50.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"p2","label":"G_open","tokens":1,"type":"place","x":130.0,"y":50.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"p3","label":"G_close","tokens":0,"type":"place","x":60.0,"y":230.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"p4","label":"BufferTaxiWay_1","tokens":5,"type":"place","x":165.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"p5","label":"TaxiWay_1","tokens":0,"type":"place","x":153.33333333333331,"y":230.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"p6","label":"TW_open_1","tokens":1,"type":"place","x":200.0,"y":50.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"p7","label":"TW_close_1","tokens":0,"type":"place","x":60.0,"y":410.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"p8","label":"BufferTaxiWay_2","tokens":5,"type":"place","x":235.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"p9","label":"TaxiWay_2","tokens":0,"type":"place","x":246.66666666666666,"y":230.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"p10","label":"TW_open_2","tokens":1,"type":"place","x":270.0,"y":50.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"p11","label":"TW_close_2","tokens":0,"type":"place","x":172.0,"y":410.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"p12","label":"BufferTaxiWay_3","tokens":5,"type":"place","x":305.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"p13","label":"TaxiWay_3","tokens":0,"type":"place","x":340.0,"y":230.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"p14","label":"TW_open_3","tokens":1,"type":"place","x":340.0,"y":50.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"p15","label":"TW_close_3","tokens":0,"type":"place","x":284.0,"y":410.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"p16","label":"BufferTrack_1","tokens":5,"type":"place","x":375.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"p17","label":"Track_1","tokens":0,"type":"place","x":433.3333333333333,"y":230.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"p18","label":"TR_open_1","tokens":1,"type":"place","x":410.0,"y":50.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"p19","label":"TR_close_1","tokens":0,"type":"place","x":396.0,"y":410.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"p20","label":"BufferTrack_2","tokens":5,"type":"place","x":445.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"p21","label":"Track_2","tokens":0,"type":"place","x":526.6666666666666,"y":230.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"p22","label":"TR_open_2","tokens":1,"type":"place","x":480.0,"y":50.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"p23","label":"TR_close_2","tokens":0,"type":"place","x":508.0,"y":410.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"p24","label":"BufferTrack_3","tokens":5,"type":"place","x":515.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"p25","label":"Track_3","tokens":0,"type":"place","x":620.0,"y":230.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"p26","label":"TR_open_3","tokens":1,"type":"place","x":550.0,"y":50.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"p27","label":"TR_close_3","tokens":0,"type":"place","x":620.0,"y":410.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"p28","label":"countPlanes","tokens":5,"type":"place","x":585.0,"y":50.0,"fill":"#EEEDFE","stroke":"#534AB7","text":"#3C3489"},{"id":"p29","label":"BufferCountPlanes","tokens":5,"type":"place","x":620.0,"y":50.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"t0","label":"lockGarage","tokens":-1,"type":"trans","x":60.0,"y":140.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"t1","label":"unlockGarage","tokens":-1,"type":"trans","x":60.0,"y":320.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"t2","label":"addTaxiWay_1","tokens":-1,"type":"trans","x":142.96296296296296,"y":140.0,"fill":"#FAEEDA","stroke":"#BA7517","text":"#633806"},{"id":"t3","label":"lockTaxiWay_1","tokens":-1,"type":"trans","x":153.33333333333331,"y":320.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"t4","label":"unlockTaxiWay_1","tokens":-1,"type":"trans","x":60.0,"y":500.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"t5","label":"addTaxiWay_2","tokens":-1,"type":"trans","x":205.1851851851852,"y":140.0,"fill":"#FAEEDA","stroke":"#BA7517","text":"#633806"},{"id":"t6","label":"lockTaxiWay_2","tokens":-1,"type":"trans","x":246.66666666666666,"y":320.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"t7","label":"unlockTaxiWay_2","tokens":-1,"type":"trans","x":172.0,"y":500.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"t8","label":"addTaxiWay_3","tokens":-1,"type":"trans","x":267.4074074074074,"y":140.0,"fill":"#FAEEDA","stroke":"#BA7517","text":"#633806"},{"id":"t9","label":"lockTaxiWay_3","tokens":-1,"type":"trans","x":340.0,"y":320.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"t10","label":"unlockTaxiWay_3","tokens":-1,"type":"trans","x":284.0,"y":500.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"t11","label":"landing_1","tokens":-1,"type":"trans","x":391.85185185185185,"y":140.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"t12","label":"lockTrack_1","tokens":-1,"type":"trans","x":433.3333333333333,"y":320.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"t13","label":"unlockTrack_1","tokens":-1,"type":"trans","x":396.0,"y":500.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"t14","label":"takeoff_1","tokens":-1,"type":"trans","x":412.5925925925926,"y":140.0,"fill":"#FAECE7","stroke":"#993C1D","text":"#712B13"},{"id":"t15","label":"landing_2","tokens":-1,"type":"trans","x":495.55555555555554,"y":140.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"t16","label":"lockTrack_2","tokens":-1,"type":"trans","x":526.6666666666666,"y":320.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"t17","label":"unlockTrack_2","tokens":-1,"type":"trans","x":508.0,"y":500.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"t18","label":"takeoff_2","tokens":-1,"type":"trans","x":516.2962962962963,"y":140.0,"fill":"#FAECE7","stroke":"#993C1D","text":"#712B13"},{"id":"t19","label":"landing_3","tokens":-1,"type":"trans","x":599.2592592592592,"y":140.0,"fill":"#EAF3DE","stroke":"#3B6D11","text":"#27500A"},{"id":"t20","label":"lockTrack_3","tokens":-1,"type":"trans","x":620.0,"y":320.0,"fill":"#FCEBEB","stroke":"#A32D2D","text":"#791F1F"},{"id":"t21","label":"unlockTrack_3","tokens":-1,"type":"trans","x":620.0,"y":500.0,"fill":"#E6F1FB","stroke":"#185FA5","text":"#0C447C"},{"id":"t22","label":"takeoff_3","tokens":-1,"type":"trans","x":620.0,"y":140.0,"fill":"#FAECE7","stroke":"#993C1D","text":"#712B13"},{"id":"t23","label":"garage_to_tw1","tokens":-1,"type":"trans","x":80.74074074074073,"y":140.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"t24","label":"garage_to_tw2","tokens":-1,"type":"trans","x":101.48148148148148,"y":140.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"t25","label":"garage_to_tw3","tokens":-1,"type":"trans","x":122.22222222222223,"y":140.0,"fill":"#E1F5EE","stroke":"#0F6E56","text":"#085041"},{"id":"t26","label":"tw1_to_tr1","tokens":-1,"type":"trans","x":329.6296296296296,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t27","label":"tw1_to_tr2","tokens":-1,"type":"trans","x":433.3333333333333,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t28","label":"tw1_to_tr3","tokens":-1,"type":"trans","x":537.037037037037,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t29","label":"tw2_to_tr1","tokens":-1,"type":"trans","x":350.3703703703704,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t30","label":"tw2_to_tr2","tokens":-1,"type":"trans","x":454.0740740740741,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t31","label":"tw2_to_tr3","tokens":-1,"type":"trans","x":557.7777777777778,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t32","label":"tw3_to_tr1","tokens":-1,"type":"trans","x":371.1111111111111,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t33","label":"tw3_to_tr2","tokens":-1,"type":"trans","x":474.8148148148148,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t34","label":"tw3_to_tr3","tokens":-1,"type":"trans","x":578.5185185185185,"y":140.0,"fill":"#FAEEDA","stroke":"#854F0B","text":"#633806"},{"id":"t35","label":"redirect_tw1_to_tw2","tokens":-1,"type":"trans","x":225.92592592592592,"y":140.0,"fill":"#EAF3DE","stroke":"#639922","text":"#27500A"},{"id":"t36","label":"redirect_tw1_to_tw3","tokens":-1,"type":"trans","x":288.14814814814815,"y":140.0,"fill":"#EAF3DE","stroke":"#639922","text":"#27500A"},{"id":"t37","label":"redirect_tw2_to_tw1","tokens":-1,"type":"trans","x":163.7037037037037,"y":140.0,"fill":"#EAF3DE","stroke":"#639922","text":"#27500A"},{"id":"t38","label":"redirect_tw2_to_tw3","tokens":-1,"type":"trans","x":308.8888888888889,"y":140.0,"fill":"#EAF3DE","stroke":"#639922","text":"#27500A"},{"id":"t39","label":"redirect_tw3_to_tw1","tokens":-1,"type":"trans","x":184.44444444444446,"y":140.0,"fill":"#EAF3DE","stroke":"#639922","text":"#27500A"},{"id":"t40","label":"redirect_tw3_to_tw2","tokens":-1,"type":"trans","x":246.66666666666666,"y":140.0,"fill":"#EAF3DE","stroke":"#639922","text":"#27500A"}];
+var edges=[{"from":"p1","to":"t0","w":1,"loop":false},{"from":"p1","to":"t23","w":1,"loop":false},{"from":"p1","to":"t24","w":1,"loop":false},{"from":"p1","to":"t25","w":1,"loop":false},{"from":"p3","to":"t1","w":1,"loop":false},{"from":"p4","to":"t23","w":1,"loop":false},{"from":"p5","to":"t3","w":1,"loop":false},{"from":"p5","to":"t26","w":1,"loop":false},{"from":"p5","to":"t27","w":1,"loop":false},{"from":"p5","to":"t28","w":1,"loop":false},{"from":"p5","to":"t35","w":1,"loop":false},{"from":"p5","to":"t36","w":1,"loop":false},{"from":"p7","to":"t4","w":1,"loop":false},{"from":"p8","to":"t24","w":1,"loop":false},{"from":"p9","to":"t6","w":1,"loop":false},{"from":"p9","to":"t29","w":1,"loop":false},{"from":"p9","to":"t30","w":1,"loop":false},{"from":"p9","to":"t31","w":1,"loop":false},{"from":"p9","to":"t37","w":1,"loop":false},{"from":"p9","to":"t38","w":1,"loop":false},{"from":"p11","to":"t7","w":1,"loop":false},{"from":"p12","to":"t25","w":1,"loop":false},{"from":"p13","to":"t9","w":1,"loop":false},{"from":"p13","to":"t32","w":1,"loop":false},{"from":"p13","to":"t33","w":1,"loop":false},{"from":"p13","to":"t34","w":1,"loop":false},{"from":"p13","to":"t39","w":1,"loop":false},{"from":"p13","to":"t40","w":1,"loop":false},{"from":"p15","to":"t10","w":1,"loop":false},{"from":"p16","to":"t26","w":1,"loop":false},{"from":"p16","to":"t29","w":1,"loop":false},{"from":"p16","to":"t32","w":1,"loop":false},{"from":"p17","to":"t12","w":1,"loop":false},{"from":"p19","to":"t13","w":1,"loop":false},{"from":"p20","to":"t27","w":1,"loop":false},{"from":"p20","to":"t30","w":1,"loop":false},{"from":"p20","to":"t33","w":1,"loop":false},{"from":"p21","to":"t16","w":1,"loop":false},{"from":"p23","to":"t17","w":1,"loop":false},{"from":"p24","to":"t28","w":1,"loop":false},{"from":"p24","to":"t31","w":1,"loop":false},{"from":"p24","to":"t34","w":1,"loop":false},{"from":"p25","to":"t20","w":1,"loop":false},{"from":"p27","to":"t21","w":1,"loop":false},{"from":"p28","to":"t14","w":1,"loop":false},{"from":"p28","to":"t18","w":1,"loop":false},{"from":"p28","to":"t22","w":1,"loop":false},{"from":"p29","to":"t11","w":1,"loop":false},{"from":"p29","to":"t15","w":1,"loop":false},{"from":"p29","to":"t19","w":1,"loop":false},{"from":"t1","to":"p0","w":1,"loop":false},{"from":"t23","to":"p0","w":1,"loop":false},{"from":"t24","to":"p0","w":1,"loop":false},{"from":"t25","to":"p0","w":1,"loop":false},{"from":"t1","to":"p2","w":1,"loop":false},{"from":"t0","to":"p3","w":1,"loop":false},{"from":"t4","to":"p4","w":1,"loop":false},{"from":"t26","to":"p4","w":1,"loop":false},{"from":"t27","to":"p4","w":1,"loop":false},{"from":"t28","to":"p4","w":1,"loop":false},{"from":"t2","to":"p5","w":1,"loop":false},{"from":"t23","to":"p5","w":1,"loop":false},{"from":"t37","to":"p5","w":1,"loop":false},{"from":"t39","to":"p5","w":1,"loop":false},{"from":"t4","to":"p6","w":1,"loop":false},{"from":"t3","to":"p7","w":1,"loop":false},{"from":"t7","to":"p8","w":1,"loop":false},{"from":"t29","to":"p8","w":1,"loop":false},{"from":"t30","to":"p8","w":1,"loop":false},{"from":"t31","to":"p8","w":1,"loop":false},{"from":"t5","to":"p9","w":1,"loop":false},{"from":"t24","to":"p9","w":1,"loop":false},{"from":"t35","to":"p9","w":1,"loop":false},{"from":"t40","to":"p9","w":1,"loop":false},{"from":"t7","to":"p10","w":1,"loop":false},{"from":"t6","to":"p11","w":1,"loop":false},{"from":"t10","to":"p12","w":1,"loop":false},{"from":"t32","to":"p12","w":1,"loop":false},{"from":"t33","to":"p12","w":1,"loop":false},{"from":"t34","to":"p12","w":1,"loop":false},{"from":"t8","to":"p13","w":1,"loop":false},{"from":"t25","to":"p13","w":1,"loop":false},{"from":"t36","to":"p13","w":1,"loop":false},{"from":"t38","to":"p13","w":1,"loop":false},{"from":"t10","to":"p14","w":1,"loop":false},{"from":"t9","to":"p15","w":1,"loop":false},{"from":"t13","to":"p16","w":1,"loop":false},{"from":"t11","to":"p17","w":1,"loop":false},{"from":"t26","to":"p17","w":1,"loop":false},{"from":"t29","to":"p17","w":1,"loop":false},{"from":"t32","to":"p17","w":1,"loop":false},{"from":"t13","to":"p18","w":1,"loop":false},{"from":"t12","to":"p19","w":1,"loop":false},{"from":"t17","to":"p20","w":1,"loop":false},{"from":"t15","to":"p21","w":1,"loop":false},{"from":"t27","to":"p21","w":1,"loop":false},{"from":"t30","to":"p21","w":1,"loop":false},{"from":"t33","to":"p21","w":1,"loop":false},{"from":"t17","to":"p22","w":1,"loop":false},{"from":"t16","to":"p23","w":1,"loop":false},{"from":"t21","to":"p24","w":1,"loop":false},{"from":"t19","to":"p25","w":1,"loop":false},{"from":"t28","to":"p25","w":1,"loop":false},{"from":"t31","to":"p25","w":1,"loop":false},{"from":"t34","to":"p25","w":1,"loop":false},{"from":"t21","to":"p26","w":1,"loop":false},{"from":"t20","to":"p27","w":1,"loop":false},{"from":"t11","to":"p28","w":1,"loop":false},{"from":"t15","to":"p28","w":1,"loop":false},{"from":"t19","to":"p28","w":1,"loop":false},{"from":"t14","to":"p29","w":1,"loop":false},{"from":"t18","to":"p29","w":1,"loop":false},{"from":"t22","to":"p29","w":1,"loop":false},{"from":"p14","to":"t36","w":1,"loop":true},{"from":"p10","to":"t5","w":1,"loop":true},{"from":"p18","to":"t32","w":1,"loop":true},{"from":"p14","to":"t38","w":1,"loop":true},{"from":"p6","to":"t23","w":1,"loop":true},{"from":"p14","to":"t8","w":1,"loop":true},{"from":"p22","to":"t15","w":1,"loop":true},{"from":"p22","to":"t18","w":1,"loop":true},{"from":"p26","to":"t28","w":1,"loop":true},{"from":"p26","to":"t22","w":1,"loop":true},{"from":"p2","to":"t25","w":1,"loop":true},{"from":"p26","to":"t31","w":1,"loop":true},{"from":"p18","to":"t11","w":1,"loop":true},{"from":"p22","to":"t30","w":1,"loop":true},{"from":"p6","to":"t2","w":1,"loop":true},{"from":"p6","to":"t37","w":1,"loop":true},{"from":"p10","to":"t24","w":1,"loop":true},{"from":"p26","to":"t34","w":1,"loop":true},{"from":"p10","to":"t35","w":1,"loop":true},{"from":"p2","to":"t24","w":1,"loop":true},{"from":"p14","to":"t25","w":1,"loop":true},{"from":"p18","to":"t29","w":1,"loop":true},{"from":"p6","to":"t39","w":1,"loop":true},{"from":"p2","to":"t23","w":1,"loop":true},{"from":"p22","to":"t27","w":1,"loop":true},{"from":"p18","to":"t26","w":1,"loop":true},{"from":"p22","to":"t33","w":1,"loop":true},{"from":"p10","to":"t40","w":1,"loop":true},{"from":"p18","to":"t14","w":1,"loop":true},{"from":"p26","to":"t19","w":1,"loop":true}];
+var nodeMap={};
+nodes.forEach(function(n){nodeMap[n.id]=n;});
 
-function getGroupV2(name) {
-  var m = name.match(/_(\d+)$/);
-  if (!m) return 'global';
-  var num = m[1];
-  if (name.indexOf('TaxiWay') >= 0 || name.indexOf('TW_') >= 0) return 'TW_' + num;
-  if (name.indexOf('Track') >= 0 || name.indexOf('TR_') >= 0) return 'TR_' + num;
-  if (name.indexOf('BufferTaxiWay') >= 0) return 'TW_' + num;
-  if (name.indexOf('BufferTrack') >= 0) return 'TR_' + num;
-  return 'global';
+var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+var W,H=650;
+var R=24,TW=10,TH=28;
+
+function initCanvas(){
+  W=cv.parentElement.clientWidth;
+  var dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr;cv.height=H*dpr;
+  cv.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
 }
 
-var groupSet = {};
-places.forEach(function(p) { groupSet[getGroupV2(p.name)] = true; });
-trans.forEach(function(t) { groupSet[getGroupV2(t.name)] = true; });
-var groupList = Object.keys(groupSet).sort();
+function scaleX(x){return x/680*W;}
+function scaleY(y){return y/680*W;}
 
-var cx = W / 2, cy = H / 2;
-var groupPositions = {};
-var nGroups = groupList.length;
-var gIdx = 0;
-groupList.forEach(function(g) {
-  if (g === 'global') { groupPositions[g] = {x:cx, y:cy}; }
-  else {
-    var angle = (2 * Math.PI * gIdx) / Math.max(nGroups - 1, 1) - Math.PI / 2;
-    var radius = Math.min(W, H) * 0.35;
-    groupPositions[g] = {x: cx + Math.cos(angle)*radius, y: cy + Math.sin(angle)*radius};
-    gIdx++;
+function clipEdge(n,tx,ty){
+  var dx=tx-n.x,dy=ty-n.y;
+  var a=Math.atan2(dy,dx);
+  if(n.type==='place'){
+    return{x:n.x+(R+2)*Math.cos(a),y:n.y+(R+2)*Math.sin(a)};
   }
-});
-
-var nodePos = {};
-var nodesByGroup = {};
-var allNodes = [];
-places.forEach(function(p,i) { allNodes.push({id:'P'+i, name:p.name, group:getGroupV2(p.name)}); });
-trans.forEach(function(t,j) { allNodes.push({id:'T'+j, name:t.name, group:getGroupV2(t.name)}); });
-
-allNodes.forEach(function(n) {
-  if (!nodesByGroup[n.group]) nodesByGroup[n.group] = [];
-  nodesByGroup[n.group].push(n);
-});
-
-Object.keys(nodesByGroup).forEach(function(group) {
-  var nodes = nodesByGroup[group];
-  var gp = groupPositions[group];
-  var n = nodes.length;
-  var localR = 40 + n * 14;
-  nodes.forEach(function(node, i) {
-    var angle = (2 * Math.PI * i) / n - Math.PI / 2;
-    nodePos[node.id] = {x: gp.x + Math.cos(angle)*localR, y: gp.y + Math.sin(angle)*localR};
-  });
-});
-
-var defs = el('defs');
-var arrowTypes = [['pre','#ef5350'],['post','#42a5f5'],['selfloop','#66bb6a']];
-arrowTypes.forEach(function(at) {
-  var marker = el('marker', {id:'arrow-'+at[0], viewBox:'0 0 10 6', refX:'10', refY:'3',
-    markerWidth:'8', markerHeight:'6', orient:'auto-start-reverse'});
-  var path = el('path', {d:'M0,0 L10,3 L0,6 Z', fill:at[1]});
-  marker.appendChild(path); defs.appendChild(marker);
-});
-svg.appendChild(defs);
-
-var arcG = el('g');
-svg.appendChild(arcG);
-arcs.forEach(function(arc) {
-  var from = nodePos[arc.from]; var to = nodePos[arc.to];
-  if (!from || !to) return;
-  var attrs = {x1:from.x, y1:from.y, x2:to.x, y2:to.y, 'class':'arc ' + arc.type};
-  if (arc.type !== 'selfloop') attrs['marker-end'] = 'url(#arrow-' + arc.type + ')';
-  arcG.appendChild(el('line', attrs));
-});
-
-places.forEach(function(p, i) {
-  var pos = nodePos['P' + i]; if (!pos) return;
-  var g = el('g', {'class':'place', transform:'translate('+pos.x+','+pos.y+')'});
-  g.appendChild(el('circle', {r:20, fill:pColors[p.cat]||pColors['default'], stroke:'#555', 'stroke-width':1.5}));
-  var tok = el('text', {'class':'token', y:4}); tok.textContent = p.tokens; g.appendChild(tok);
-  var lbl = el('text', {'class':'pname', y:32}); lbl.textContent = p.name; g.appendChild(lbl);
-  g.onmouseover = function(e) { showTip(e, 'Place: ' + p.name + ' | Tokens: ' + p.tokens); };
-  g.onmouseout = hideTip;
-  svg.appendChild(g);
-});
-
-trans.forEach(function(t, j) {
-  var pos = nodePos['T' + j]; if (!pos) return;
-  var g = el('g', {'class':'trans', transform:'translate('+pos.x+','+pos.y+')'});
-  g.appendChild(el('rect', {x:-24, y:-10, width:48, height:20, rx:3,
-    fill:tColors[t.cat]||tColors['default'], stroke:'#555', 'stroke-width':1}));
-  var lbl = el('text', {'class':'tname', y:3}); lbl.textContent = t.name; g.appendChild(lbl);
-  g.onmouseover = function(e) { showTip(e, 'Transition: ' + t.name); };
-  g.onmouseout = hideTip;
-  svg.appendChild(g);
-});
-
-var tipEl = document.getElementById('tooltip');
-function showTip(e, text) {
-  tipEl.textContent = text; tipEl.style.display = 'block';
-  tipEl.style.left = (e.clientX + 15) + 'px'; tipEl.style.top = (e.clientY + 15) + 'px';
+  var hw=TW/2+2,hh=TH/2+2;
+  var ca=Math.cos(a),sa=Math.sin(a);
+  var t=Math.min(hw/(Math.abs(ca)||0.001),hh/(Math.abs(sa)||0.001));
+  return{x:n.x+t*ca,y:n.y+t*sa};
 }
-function hideTip() { tipEl.style.display = 'none'; }
 
-var vb = {x:0, y:0, w:W, h:H};
-svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
-var panning = false, panStart = {x:0, y:0};
-svg.onmousedown = function(e) { panning = true; panStart = {x:e.clientX, y:e.clientY}; };
-svg.onmousemove = function(e) {
-  if (!panning) return;
-  var dx = (e.clientX - panStart.x) * (vb.w / W);
-  var dy = (e.clientY - panStart.y) * (vb.h / H);
-  vb.x -= dx; vb.y -= dy;
-  svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
-  panStart = {x:e.clientX, y:e.clientY};
-};
-svg.onmouseup = function() { panning = false; };
-svg.onmouseleave = function() { panning = false; };
-svg.onwheel = function(e) {
-  e.preventDefault();
-  var scale = e.deltaY > 0 ? 1.1 : 0.9;
-  var mx = vb.x + (e.clientX / W) * vb.w;
-  var my = vb.y + ((e.clientY - 48) / H) * vb.h;
-  vb.w *= scale; vb.h *= scale;
-  vb.x = mx - (e.clientX / W) * vb.w;
-  vb.y = my - ((e.clientY - 48) / H) * vb.h;
-  svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
-};
+function drawArr(x1,y1,x2,y2,col,w){
+  ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=w||0.8;
+  ctx.moveTo(scaleX(x1),scaleY(y1));ctx.lineTo(scaleX(x2),scaleY(y2));ctx.stroke();
+  var a=Math.atan2(y2-y1,x2-x1),sz=5;
+  var ex=scaleX(x2),ey=scaleY(y2);
+  ctx.beginPath();ctx.moveTo(ex,ey);
+  ctx.lineTo(ex-sz*Math.cos(a-0.35),ey-sz*Math.sin(a-0.35));
+  ctx.lineTo(ex-sz*Math.cos(a+0.35),ey-sz*Math.sin(a+0.35));
+  ctx.closePath();ctx.fillStyle=col;ctx.fill();
+}
 
+function rrect(x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}
+
+function render(){
+  initCanvas();
+  ctx.clearRect(0,0,W,H);
+
+  edges.forEach(function(e){
+    var a=nodeMap[e.from],b=nodeMap[e.to];
+    if(!a||!b)return;
+    var pa=clipEdge(a,b.x,b.y);
+    var pb=clipEdge(b,a.x,a.y);
+
+    if(e.loop){
+      var mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+      var nx=-(b.y-a.y)*0.35,ny=(b.x-a.x)*0.35;
+      var cx1=mx+nx,cy1=my+ny;
+      ctx.beginPath();ctx.strokeStyle='#7F77DD';ctx.lineWidth=0.8;
+      ctx.setLineDash([4,3]);
+      ctx.moveTo(scaleX(pa.x),scaleY(pa.y));
+      ctx.quadraticCurveTo(scaleX(cx1),scaleY(cy1),scaleX(pb.x),scaleY(pb.y));
+      ctx.stroke();ctx.setLineDash([]);
+      var ae=Math.atan2(pb.y-cy1,pb.x-cx1),sz=4;
+      var ex=scaleX(pb.x),ey=scaleY(pb.y);
+      ctx.beginPath();ctx.moveTo(ex,ey);
+      ctx.lineTo(ex-sz*Math.cos(ae-0.35),ey-sz*Math.sin(ae-0.35));
+      ctx.lineTo(ex-sz*Math.cos(ae+0.35),ey-sz*Math.sin(ae+0.35));
+      ctx.closePath();ctx.fillStyle='#7F77DD';ctx.fill();
+    } else {
+      drawArr(pa.x,pa.y,pb.x,pb.y,'#5F5E5A',0.7);
+      if(e.w>1){
+        var mx2=scaleX((pa.x+pb.x)/2),my2=scaleY((pa.y+pb.y)/2);
+        ctx.fillStyle='#BA7517';ctx.font='bold 9px system-ui';ctx.textAlign='center';
+        ctx.fillText(e.w.toString(),mx2,my2-4);
+      }
+    }
+  });
+
+  nodes.forEach(function(n){
+    var sx=scaleX(n.x),sy=scaleY(n.y);
+    ctx.textAlign='center';ctx.textBaseline='middle';
+
+    if(n.type==='place'){
+      var sr=R*W/680;
+      ctx.beginPath();ctx.arc(sx,sy,sr,0,Math.PI*2);
+      ctx.fillStyle=n.fill;ctx.fill();
+      ctx.strokeStyle=n.stroke;ctx.lineWidth=1.2;ctx.stroke();
+      ctx.fillStyle=n.text;ctx.font='bold 10px system-ui';
+      if(n.tokens>0&&n.tokens<=4){
+        var dots='';for(var k=0;k<n.tokens;k++)dots+='●';
+        ctx.fillText(dots,sx,sy);
+      }else if(n.tokens>4){
+        ctx.fillText('['+n.tokens+']',sx,sy);
+      }
+      ctx.fillStyle='#bbb';ctx.font='8px system-ui';
+      ctx.fillText(n.label,sx,sy+sr+10);
+    }else{
+      var sw=TW*W/680,sh=TH*W/680;
+      ctx.fillStyle=n.fill;ctx.strokeStyle=n.stroke;ctx.lineWidth=1.2;
+      rrect(sx-sw/2,sy-sh/2,sw,sh,2);ctx.fill();ctx.stroke();
+      ctx.fillStyle='#bbb';ctx.font='7px system-ui';
+      ctx.fillText(n.label,sx,sy+sh/2+9);
+    }
+  });
+}
+
+render();
+window.addEventListener('resize',function(){render();});
 </script>
-</body>
-</html>
+</body></html>
