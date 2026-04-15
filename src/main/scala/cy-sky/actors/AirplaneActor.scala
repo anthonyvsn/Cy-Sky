@@ -5,7 +5,8 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import cysky.model._
 import cysky.protocol._
 import cysky.protocol.AirplaneCommand._
-import cysky.protocol.ControlTowerCommand._
+import cysky.protocol.ControlTowerCommand.{RequestLanding, RequestTakeoff, EmergencyLand}
+import cysky.protocol.GarageCommand
 import java.time.LocalDateTime
 
 // ═══════════════════════════════════════════════════════════════
@@ -76,7 +77,6 @@ object AirplaneActor {
 
       case LandingAuthorized(runwayId) =>
         val next = data.withState(AirplaneState.Landing).withRunway(Some(runwayId))
-        data.towerRef ! LandRequest(data.airplaneId, ???) // RunwayActor ref injecté au runtime
         landing(next)
 
       case HoldPosition =>
@@ -103,19 +103,19 @@ object AirplaneActor {
     Behaviors.receiveMessage {
 
       case Tick(_) =>
-        // En pratique le RunwayActor envoie LandingComplete via la ControlTower
-        // qui déclenche la transition vers Taxiing
         landing(data)
+
+      case TaxiToGarage(garageRef) =>
+        // La ControlTower confirme la fin d'atterrissage et assigne un garage
+        val next = data.withState(AirplaneState.Taxiing)
+        taxiing(next, garageRef)
 
       case HoldPosition =>
-        // Ne devrait pas arriver en Landing — ignoré
         landing(data)
 
-      // Transition automatique déclenchée par le RunwayActor
       case LandingAuthorized(_) => landing(data) // déjà sur piste, ignoré
 
       case msg =>
-        // Aucun autre message attendu pendant l'atterrissage
         Behaviors.unhandled
     }
 
@@ -170,22 +170,27 @@ object AirplaneActor {
   // ─────────────────────────────────────────────
   // État : TaxiOut — rejoint la piste de décollage
   // ─────────────────────────────────────────────
-  private def taxiOut(data: AirplaneData): Behavior[AirplaneCommand] =
-    Behaviors.receiveMessage {
+  // requestSent évite de renvoyer la demande à chaque Tick
+  private def taxiOut(data: AirplaneData, requestSent: Boolean = false): Behavior[AirplaneCommand] =
+    Behaviors.receive { (ctx, msg) =>
+      msg match {
 
-      case TakeoffAuthorized(runwayId) =>
-        val next = data.withState(AirplaneState.Takeoff).withRunway(Some(runwayId))
-        takeoff(next)
+        case TakeoffAuthorized(runwayId) =>
+          val next = data.withState(AirplaneState.Takeoff).withRunway(Some(runwayId))
+          takeoff(next)
 
-      case HoldPosition =>
-        taxiOut(data)
+        case HoldPosition =>
+          // La tour refuse pour l'instant — réessayer au prochain tick
+          taxiOut(data, requestSent = false)
 
-      case Tick(_) =>
-        // Envoyer la demande de décollage à chaque tick tant que pas autorisé
-        data.towerRef ! RequestTakeoff(data.airplaneId, ???)
-        taxiOut(data)
+        case Tick(_) =>
+          if (!requestSent) {
+            data.towerRef ! RequestTakeoff(data.airplaneId, ctx.self)
+          }
+          taxiOut(data, requestSent = true)
 
-      case _ => Behaviors.unhandled
+        case _ => Behaviors.unhandled
+      }
     }
 
   // ─────────────────────────────────────────────

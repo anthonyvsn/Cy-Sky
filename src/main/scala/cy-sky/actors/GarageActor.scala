@@ -5,9 +5,10 @@ import akka.actor.typed.scaladsl.Behaviors
 import cysky.model._
 import cysky.protocol._
 import cysky.protocol.GarageCommand._
-import cysky.protocol.ControlTowerCommand._
-import cysky.protocol.AirplaneCommand._
+import cysky.protocol.ControlTowerCommand.GarageFreed
+import cysky.protocol.AirplaneCommand.ParkConfirmed
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 // ═══════════════════════════════════════════════════════════════
 // GarageActor — Akka Typed, style fonctionnel pur
@@ -20,16 +21,20 @@ import java.time.LocalDateTime
 // ═══════════════════════════════════════════════════════════════
 object GarageActor {
 
+  private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
+  private def fmt(t: LocalDateTime): String = t.format(HHmm)
+
   // ─────────────────────────────────────────────
   // État interne immuable
   // ─────────────────────────────────────────────
   final case class GarageData(
     garageId:             String,
     state:                GarageState,
-    occupiedBy:           Option[String],         // airplaneId courant
+    occupiedBy:           Option[String],
     towerRef:             ActorRef[ControlTowerCommand],
     occupiedSince:        Option[LocalDateTime],
-    groundDurationMinutes: Long                   // durée de stationnement prévue
+    groundDurationMinutes: Long,
+    simTime:              LocalDateTime = LocalDateTime.MIN
   ) {
     def withState(s: GarageState):        GarageData = copy(state = s)
     def withOccupied(id: Option[String]): GarageData = copy(occupiedBy = id)
@@ -76,22 +81,19 @@ object GarageActor {
       msg match {
 
         case ParkRequest(airplaneId, airplaneRef) =>
-          ctx.log.info(s"[Garage ${data.garageId}] Accueille $airplaneId")
-          val now  = LocalDateTime.now()
+          ctx.log.info(s"[Garage ${data.garageId} ${fmt(data.simTime)}] $airplaneId stationné")
           val next = data
             .withState(GarageState.Occupied)
             .withOccupied(Some(airplaneId))
-            .copy(occupiedSince = Some(now))
-          // Confirmer immédiatement à l'avion
+            .copy(occupiedSince = Some(data.simTime))
           airplaneRef ! ParkConfirmed(data.garageId)
           occupied(next, airplaneRef)
 
         case LeaveGarage(airplaneId, _) =>
-          // Incohérence : garage libre mais avion demande à partir
           ctx.log.warn(s"[Garage ${data.garageId}] LeaveGarage de $airplaneId sur garage libre — ignoré")
           free(data)
 
-        case Tick(_) => free(data)
+        case Tick(simTime) => free(data.copy(simTime = simTime))
       }
     }
 
@@ -108,21 +110,12 @@ object GarageActor {
       msg match {
 
         case Tick(simTime) =>
-          // Vérifier si la durée de stationnement est écoulée
-          val remaining = data.remainingGroundTime(simTime)
-          if (remaining <= 0L) {
-            // L'avion peut maintenant demander son décollage
-            // (Il le fera lui-même via son propre Tick handler)
-            occupied(data, airplaneRef)
-          } else {
-            occupied(data, airplaneRef)
-          }
+          occupied(data.copy(simTime = simTime), airplaneRef)
 
         case LeaveGarage(airplaneId, towerRef) =>
-          // Vérifier que c'est bien l'avion attendu
           data.occupiedBy match {
             case Some(id) if id == airplaneId =>
-              ctx.log.info(s"[Garage ${data.garageId}] $airplaneId quitte le garage")
+              ctx.log.info(s"[Garage ${data.garageId} ${fmt(data.simTime)}] $airplaneId quitte le garage")
               val next = data
                 .withState(GarageState.Free)
                 .withOccupied(None)

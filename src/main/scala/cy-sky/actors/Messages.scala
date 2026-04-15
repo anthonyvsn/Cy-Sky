@@ -38,6 +38,13 @@ object AirplaneCommand {
   /** Déroutement vers un autre aéroport — état terminal */
   case object Divert extends AirplaneCommand
 
+  /**
+   * La ControlTower indique à l'avion de rouler vers le garage assigné.
+   * Déclenche la transition Landing → Taxiing dans l'AirplaneActor.
+   */
+  final case class TaxiToGarage(garageRef: ActorRef[GarageCommand])
+    extends AirplaneCommand
+
   /** Tick de l'horloge Akka — avance le temps simulé */
   final case class Tick(simulatedTime: LocalDateTime)
     extends AirplaneCommand
@@ -91,6 +98,10 @@ object ControlTowerCommand {
 
   /** Annuler un vol */
   final case class CancelFlight(flightId: String)
+    extends ControlTowerCommand
+
+  /** Tick de l'horloge simulée — avance le temps de la simulation */
+  final case class Tick(simulatedTime: LocalDateTime)
     extends ControlTowerCommand
 }
 

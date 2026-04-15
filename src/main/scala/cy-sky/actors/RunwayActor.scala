@@ -5,8 +5,9 @@ import akka.actor.typed.scaladsl.Behaviors
 import cysky.model._
 import cysky.protocol._
 import cysky.protocol.RunwayCommand._
-import cysky.protocol.ControlTowerCommand._
+import cysky.protocol.ControlTowerCommand.RunwayFreed
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 // ═══════════════════════════════════════════════════════════════
 // RunwayActor — Akka Typed, style fonctionnel pur
@@ -19,6 +20,9 @@ object RunwayActor {
   // ─────────────────────────────────────────────
   // État interne immuable
   // ─────────────────────────────────────────────
+  private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
+  private def fmt(t: LocalDateTime): String = t.format(HHmm)
+
   final case class RunwayData(
     runwayId:          String,
     state:             RunwayState,
@@ -27,8 +31,9 @@ object RunwayActor {
     landingDurationMin: Int   = 4,
     takeoffDurationMin: Int   = 3,
     taxiDurationMin:    Int   = 2,
-    totalUsageMinutes:  Long  = 0L,         // pour le taux d'occupation ≥ 80%
-    occupiedSince:      Option[LocalDateTime] = None
+    totalUsageMinutes:  Long  = 0L,
+    occupiedSince:      Option[LocalDateTime] = None,
+    simTime:            LocalDateTime = LocalDateTime.MIN   // dernière heure simulée connue
   ) {
     def withState(s: RunwayState):          RunwayData = copy(state = s)
     def withOccupied(id: Option[String]):   RunwayData = copy(occupiedBy = id)
@@ -67,32 +72,34 @@ object RunwayActor {
       msg match {
 
         case LandRequest(airplaneId, _) =>
-          ctx.log.info(s"[Runway ${data.runwayId}] Atterrissage de $airplaneId — début")
+          ctx.log.info(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] Atterrissage de $airplaneId — début")
           val next = data
             .withState(RunwayState.Landing)
             .withOccupied(Some(airplaneId))
-            .copy(occupiedSince = Some(LocalDateTime.now()))
+            .copy(occupiedSince = Some(data.simTime))
           landing(next)
 
         case TakeoffRequest(airplaneId, _) =>
-          ctx.log.info(s"[Runway ${data.runwayId}] Décollage de $airplaneId — début")
+          ctx.log.info(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] Décollage de $airplaneId — début")
           val next = data
             .withState(RunwayState.TakeoffInProgress)
             .withOccupied(Some(airplaneId))
+            .copy(occupiedSince = Some(data.simTime))
           takeoffInProgress(next)
 
         case EmergencyLandRequest(airplaneId, _) =>
-          ctx.log.warn(s"[Runway ${data.runwayId}] URGENCE $airplaneId — atterrissage forcé")
+          ctx.log.warn(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] URGENCE $airplaneId — atterrissage forcé")
           val next = data
             .withState(RunwayState.Landing)
             .withOccupied(Some(airplaneId))
+            .copy(occupiedSince = Some(data.simTime))
           landing(next)
 
         case StormShutdown =>
-          ctx.log.warn(s"[Runway ${data.runwayId}] Fermeture météo")
+          ctx.log.warn(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] Fermeture météo")
           blocked(data)
 
-        case Tick(_) => free(data)
+        case Tick(simTime) => free(data.copy(simTime = simTime))
       }
     }
 
@@ -105,21 +112,20 @@ object RunwayActor {
       msg match {
 
         case Tick(simTime) =>
-          // Vérifier si la durée d'atterrissage est écoulée
           val elapsed = data.occupiedSince.map { since =>
             java.time.Duration.between(since, simTime).toMinutes
           }.getOrElse(0L)
 
           if (elapsed >= data.landingDurationMin) {
-            ctx.log.info(s"[Runway ${data.runwayId}] Atterrissage terminé — passage en taxi")
-            // La piste est libérée immédiatement (avant la fin du taxi)
+            ctx.log.info(s"[Runway ${data.runwayId} ${fmt(simTime)}] Atterrissage de ${data.occupiedBy.getOrElse("?")} terminé — piste libérée")
             val updated = data
               .withState(RunwayState.TaxiToGarage)
               .withUsage(data.landingDurationMin.toLong)
+              .copy(simTime = simTime)
             data.towerRef ! RunwayFreed(data.runwayId)
             taxiToGarage(updated, simTime)
           } else {
-            landing(data)
+            landing(data.copy(simTime = simTime))
           }
 
         // Pendant Landing, tous les autres messages sont mis en file
@@ -143,24 +149,22 @@ object RunwayActor {
         case Tick(simTime) =>
           val elapsed = java.time.Duration.between(taxiStart, simTime).toMinutes
           if (elapsed >= data.taxiDurationMin) {
-            ctx.log.info(s"[Runway ${data.runwayId}] Taxi terminé — retour Free")
+            ctx.log.info(s"[Runway ${data.runwayId} ${fmt(simTime)}] Taxi terminé — piste libre")
             val next = data
               .withState(RunwayState.Free)
               .withOccupied(None)
-              .copy(occupiedSince = None)
+              .copy(occupiedSince = None, simTime = simTime)
             free(next)
           } else {
-            taxiToGarage(data, taxiStart)
+            taxiToGarage(data.copy(simTime = simTime), taxiStart)
           }
 
-        // La piste est déjà libre : on peut accepter un nouveau vol
-        // pendant que l'avion précédent finit son taxi
-        case LandRequest(airplaneId, towerRef) =>
-          ctx.log.info(s"[Runway ${data.runwayId}] Accepte $airplaneId pendant taxi sortant")
+        case LandRequest(airplaneId, _) =>
+          ctx.log.info(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] Accepte $airplaneId pendant taxi sortant")
           val next = data
             .withState(RunwayState.Landing)
             .withOccupied(Some(airplaneId))
-            .copy(occupiedSince = Some(LocalDateTime.now()))
+            .copy(occupiedSince = Some(data.simTime))
           landing(next)
 
         case _ => taxiToGarage(data, taxiStart)
@@ -180,16 +184,16 @@ object RunwayActor {
           }.getOrElse(0L)
 
           if (elapsed >= data.takeoffDurationMin) {
-            ctx.log.info(s"[Runway ${data.runwayId}] Décollage terminé — piste libre")
+            ctx.log.info(s"[Runway ${data.runwayId} ${fmt(simTime)}] Décollage de ${data.occupiedBy.getOrElse("?")} terminé — piste libre")
             val next = data
               .withState(RunwayState.Free)
               .withOccupied(None)
               .withUsage(data.takeoffDurationMin.toLong)
-              .copy(occupiedSince = None)
+              .copy(occupiedSince = None, simTime = simTime)
             data.towerRef ! RunwayFreed(data.runwayId)
             free(next)
           } else {
-            takeoffInProgress(data)
+            takeoffInProgress(data.copy(simTime = simTime))
           }
 
         case _ => Behaviors.unhandled
