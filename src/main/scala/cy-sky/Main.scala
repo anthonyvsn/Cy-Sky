@@ -13,10 +13,15 @@ import scala.concurrent.duration._
 // Main — simulation d'une journée aéroport CySky
 //
 // Calibrage temporel :
-//   tickInterval = 50 ms  (temps réel entre deux ticks)
-//   simStep      = 1 min  (temps simulé avancé par tick)
+//   tickInterval = 112 ms  (temps réel entre deux ticks)
+//   simStep      = 1 min   (temps simulé avancé par tick)
 //   → journée 06:00 → 23:59 (1 079 ticks)
-//     ≈ 1 079 × 50 ms ≈ 54 secondes réelles
+//     ≈ 1 079 × 112 ms ≈ 121 secondes ≈ 2 minutes réelles
+//
+// Démarrage :
+//   1. DashboardServer démarre sur :8080
+//   2. Main bloque sur startLatch jusqu'au clic Start dans le navigateur
+//   3. Le système d'acteurs est lancé
 //
 // Terminaison :
 //   Le ClockActor s'arrête quand simTime ≥ endTime.
@@ -34,7 +39,7 @@ object Main extends App {
   val SIM_END       = LocalTime.of(23, 59)
   val SIM_DATE      = LocalDate.now()
 
-  val TICK_INTERVAL: FiniteDuration     = 50.millis
+  val TICK_INTERVAL: FiniteDuration     = 112.millis
   val SIM_STEP:      java.time.Duration = java.time.Duration.ofMinutes(1)
 
   // ── Génération du planning ────────────────────────────────────
@@ -50,6 +55,17 @@ object Main extends App {
   val totalFlights = schedule.values.flatten.size / 2
   println(s"Planning généré : $totalFlights vols sur ${schedule.size} piste(s)")
   println(s"Durée simulation réelle estimée : ~${SIM_START.until(SIM_END, java.time.temporal.ChronoUnit.MINUTES) * TICK_INTERVAL.toMillis / 1000} secondes")
+  println("─" * 60)
+
+  // ── Démarrage du serveur HTTP ─────────────────────────────────
+  DashboardServer.start()
+  println("Dashboard disponible → http://localhost:8080")
+  println("En attente du clic Start dans le navigateur...")
+  println("─" * 60)
+
+  // ── Attente du clic Start ─────────────────────────────────────
+  SimState.startLatch.await()
+  println("Simulation démarrée !")
   println("─" * 60)
 
   // ── Guardian ─────────────────────────────────────────────────
@@ -88,6 +104,7 @@ object Main extends App {
     Behaviors.receiveMessage { _ =>
       println("─" * 60)
       println("Simulation terminée — arrêt du système")
+      SimState.markFinished()
       ctx.system.terminate()
       Behaviors.stopped
     }
@@ -95,5 +112,6 @@ object Main extends App {
 
   // ── Démarrage et attente de fin propre ────────────────────────
   val system = ActorSystem[Done](rootBehavior, "cysky-aerosim")
+
   Await.result(system.whenTerminated, 10.minutes)
 }

@@ -8,6 +8,7 @@ import cysky.protocol._
 import cysky.protocol.ControlTowerCommand._
 import cysky.protocol.AirplaneCommand.{LandingAuthorized, TakeoffAuthorized, TaxiToGarage}
 import cysky.protocol.GarageCommand.ParkRequest
+import cysky.SimState
 import java.time.{LocalDate, LocalDateTime}
 import java.time.format.DateTimeFormatter
 
@@ -68,7 +69,9 @@ object TowerControlActor {
     freeGarages:       Set[String],
     launchedAirplanes: Set[String],
     simDate:           LocalDate,
-    simTime:           LocalDateTime          // heure simulée courante
+    simTime:           LocalDateTime,
+    flightStates:      Map[String, String],   // airplaneId -> état lisible
+    tickCount:         Int                    // compteur de ticks pour throttle dashboard
   )
 
   private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
@@ -125,7 +128,9 @@ object TowerControlActor {
         freeGarages       = garages.keySet,
         launchedAirplanes = Set.empty,
         simDate           = simDate,
-        simTime           = simDate.atTime(6, 0)
+        simTime           = simDate.atTime(6, 0),
+        flightStates      = Map.empty,
+        tickCount         = 0
       )
       running(ctx, data)
     }
@@ -143,10 +148,12 @@ object TowerControlActor {
 
       // ── Tick horloge simulée ──────────────────────────────────
       case Tick(simTime) =>
-        val d1 = spawnDueAirplanes(ctx, data.copy(simTime = simTime), simTime)
+        val d1 = spawnDueAirplanes(ctx, data.copy(simTime = simTime, tickCount = data.tickCount + 1), simTime)
         d1.runways.values.foreach(_ ! RunwayCommand.Tick(simTime))
         d1.garages.values.foreach(_ ! GarageCommand.Tick(simTime))
         d1.airplanes.values.foreach(_ ! AirplaneCommand.Tick(simTime))
+        // Mise à jour du state partagé à chaque tick (AtomicReference, coût négligeable)
+        SimState.update(d1)
         running(ctx, d1)
 
       // ── Demande d'atterrissage standard ──────────────────────
@@ -166,19 +173,26 @@ object TowerControlActor {
       // ── Demande de décollage ──────────────────────────────────
       case RequestTakeoff(airplaneId, replyTo) =>
         ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] Demande décollage $airplaneId")
-        val d1 = data.copy(takeoffQueue = data.takeoffQueue :+ PendingTakeoff(airplaneId, replyTo))
+        val d1 = data.copy(
+          takeoffQueue = data.takeoffQueue :+ PendingTakeoff(airplaneId, replyTo),
+          flightStates = data.flightStates + (airplaneId -> "Taxi vers piste")
+        )
         running(ctx, drainTakeoffQueue(ctx, d1))
 
       // ── Piste libérée ─────────────────────────────────────────
       case RunwayFreed(runwayId) =>
         val justLandedId   = data.runwayOccupancy.get(runwayId)
         val justDepartedId = data.takeoffOccupancy.get(runwayId)
-        justDepartedId.foreach(id => ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] $id a décollé — piste $runwayId libre"))
+        justDepartedId match {
+          case Some(id) => ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] $id a décollé — piste $runwayId libre")
+          case None     =>
+        }
         val d1 = data.copy(
           freeRunways      = data.freeRunways + runwayId,
           runwayOccupancy  = data.runwayOccupancy  - runwayId,
           takeoffOccupancy = data.takeoffOccupancy - runwayId,
-          airplanes        = justDepartedId.fold(data.airplanes)(data.airplanes - _)
+          airplanes        = justDepartedId.fold(data.airplanes)(data.airplanes - _),
+          flightStates     = justDepartedId.fold(data.flightStates)(id => data.flightStates + (id -> "Parti"))
         )
         val d2 = justLandedId.fold(d1)(id => assignGarage(ctx, d1, id))
         val d3 = drainLandingQueue(ctx, d2)
@@ -251,7 +265,8 @@ object TowerControlActor {
 
       d.copy(
         airplanes         = d.airplanes + (arrival.airplaneId -> airplaneRef),
-        launchedAirplanes = d.launchedAirplanes + arrival.airplaneId
+        launchedAirplanes = d.launchedAirplanes + arrival.airplaneId,
+        flightStates      = d.flightStates + (arrival.airplaneId -> "En approche")
       )
     }
   }
@@ -267,31 +282,23 @@ object TowerControlActor {
   private def drainLandingQueue(
     ctx:  ActorContext[ControlTowerCommand],
     data: TowerData
-  ): TowerData = {
-    if (data.landingQueue.isEmpty || data.freeRunways.isEmpty) return data
-
-    val pending   = data.landingQueue.head
-    val runwayId  = data.freeRunways.head
-    val runwayRef = data.runways(runwayId)
-
-    val runwayCmd =
-      if (pending.emergency)
-        RunwayCommand.EmergencyLandRequest(pending.airplaneId, ctx.self)
-      else
-        RunwayCommand.LandRequest(pending.airplaneId, ctx.self)
-
-    runwayRef    ! runwayCmd
-    pending.replyTo ! LandingAuthorized(runwayId)
-
-    ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] Atterrissage ${pending.airplaneId} → piste $runwayId")
-
-    val d1 = data.copy(
-      landingQueue    = data.landingQueue.tail,
-      freeRunways     = data.freeRunways - runwayId,
-      runwayOccupancy = data.runwayOccupancy + (runwayId -> pending.airplaneId)
-    )
-    drainLandingQueue(ctx, d1)
-  }
+  ): TowerData =
+    (data.landingQueue, data.freeRunways.headOption) match {
+      case (pending :: rest, Some(runwayId)) =>
+        val runwayCmd =
+          if (pending.emergency) RunwayCommand.EmergencyLandRequest(pending.airplaneId, ctx.self)
+          else                   RunwayCommand.LandRequest(pending.airplaneId, ctx.self)
+        data.runways(runwayId) ! runwayCmd
+        pending.replyTo ! LandingAuthorized(runwayId)
+        ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] Atterrissage ${pending.airplaneId} → piste $runwayId")
+        drainLandingQueue(ctx, data.copy(
+          landingQueue    = rest,
+          freeRunways     = data.freeRunways - runwayId,
+          runwayOccupancy = data.runwayOccupancy + (runwayId -> pending.airplaneId),
+          flightStates    = data.flightStates + (pending.airplaneId -> "Atterrissage en cours")
+        ))
+      case _ => data
+    }
 
   // ─────────────────────────────────────────────
   // Vider la file de décollage
@@ -299,30 +306,24 @@ object TowerControlActor {
   // Priorité aux atterrissages : on n'utilise une piste pour
   // un décollage que s'il n'y a aucun atterrissage en attente.
   // ─────────────────────────────────────────────
+  // Les atterrissages sont prioritaires : pas de décollage si la file landing est non vide
   private def drainTakeoffQueue(
     ctx:  ActorContext[ControlTowerCommand],
     data: TowerData
-  ): TowerData = {
-    if (data.takeoffQueue.isEmpty || data.freeRunways.isEmpty) return data
-    // Les atterrissages sont prioritaires sur les décollages
-    if (data.landingQueue.nonEmpty) return data
-
-    val pending   = data.takeoffQueue.head
-    val runwayId  = data.freeRunways.head
-    val runwayRef = data.runways(runwayId)
-
-    runwayRef       ! RunwayCommand.TakeoffRequest(pending.airplaneId, ctx.self)
-    pending.replyTo ! TakeoffAuthorized(runwayId)
-
-    ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] Décollage ${pending.airplaneId} → piste $runwayId")
-
-    val d1 = data.copy(
-      takeoffQueue     = data.takeoffQueue.tail,
-      freeRunways      = data.freeRunways - runwayId,
-      takeoffOccupancy = data.takeoffOccupancy + (runwayId -> pending.airplaneId)
-    )
-    drainTakeoffQueue(ctx, d1)
-  }
+  ): TowerData =
+    (data.takeoffQueue, data.freeRunways.headOption, data.landingQueue) match {
+      case (pending :: rest, Some(runwayId), Nil) =>
+        data.runways(runwayId) ! RunwayCommand.TakeoffRequest(pending.airplaneId, ctx.self)
+        pending.replyTo ! TakeoffAuthorized(runwayId)
+        ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] Décollage ${pending.airplaneId} → piste $runwayId")
+        drainTakeoffQueue(ctx, data.copy(
+          takeoffQueue     = rest,
+          freeRunways      = data.freeRunways - runwayId,
+          takeoffOccupancy = data.takeoffOccupancy + (runwayId -> pending.airplaneId),
+          flightStates     = data.flightStates + (pending.airplaneId -> "Décollage en cours")
+        ))
+      case _ => data
+    }
 
   // ─────────────────────────────────────────────
   // Assigner un garage à un avion qui vient d'atterrir
@@ -335,28 +336,26 @@ object TowerControlActor {
     ctx:        ActorContext[ControlTowerCommand],
     data:       TowerData,
     airplaneId: String
-  ): TowerData = {
-    if (data.freeGarages.isEmpty) {
-      ctx.log.warn(s"[TowerControl ${fmt(data.simTime)}] Aucun garage disponible pour $airplaneId — avion en attente")
-      return data
-    }
-
-    val garageId    = data.freeGarages.head
-    val garageRef   = data.garages(garageId)
-    val airplaneRef = data.airplanes.get(airplaneId)
-
-    airplaneRef match {
-      case Some(ref) =>
-        ref ! TaxiToGarage(garageRef)
-        garageRef ! ParkRequest(airplaneId, ref)
+  ): TowerData =
+    (data.freeGarages.headOption, data.airplanes.get(airplaneId)) match {
+      case (Some(garageId), Some(airplaneRef)) =>
+        val garageRef = data.garages(garageId)
+        airplaneRef ! TaxiToGarage(garageRef)
+        garageRef   ! ParkRequest(airplaneId, airplaneRef)
         ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] $airplaneId stationné au $garageId")
-        data.copy(freeGarages = data.freeGarages - garageId)
+        data.copy(
+          freeGarages  = data.freeGarages - garageId,
+          flightStates = data.flightStates + (airplaneId -> s"Au sol — $garageId")
+        )
 
-      case None =>
+      case (None, _) =>
+        ctx.log.warn(s"[TowerControl ${fmt(data.simTime)}] Aucun garage disponible pour $airplaneId")
+        data
+
+      case (_, None) =>
         ctx.log.error(s"[TowerControl ${fmt(data.simTime)}] ActorRef introuvable pour $airplaneId")
         data
     }
-  }
 
   // ─────────────────────────────────────────────
   // Insertion dans la file d'atterrissage

@@ -84,13 +84,7 @@ object AirplaneActor {
         inFlight(data)
 
       case Divert =>
-        data match {
-          case d if d.urgencyLevel == UrgencyLevel.Emergency =>
-            // Une urgence ne devrait jamais être déroutée — log critique
-            Behaviors.stopped
-          case _ =>
-            Behaviors.stopped
-        }
+        Behaviors.stopped
 
       case Tick(_) => inFlight(data) // pas de transition sur tick en InFlight
     }
