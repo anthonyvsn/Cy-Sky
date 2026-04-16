@@ -215,6 +215,21 @@ object TowerControlActor {
       case CancelFlight(flightId) =>
         ctx.log.warn(s"[TowerControl] Annulation vol $flightId")
         running(ctx, data)
+
+      case InjectEmergencyArrival(urgency, targetTime) =>
+        ctx.log.warn(s"[TowerControl] Injection urgence ${urgency.label} pour $targetTime")
+        running(ctx, data)
+
+      case InjectRunwayClosure =>
+        data.freeRunways.headOption match {
+          case Some(runwayId) =>
+            ctx.log.warn(s"[TowerControl] Fermeture piste $runwayId suite à incident injecté")
+            data.runways(runwayId) ! RunwayCommand.StormShutdown
+            running(ctx, data.copy(freeRunways = data.freeRunways - runwayId))
+          case None =>
+            ctx.log.warn(s"[TowerControl] Fermeture piste demandée mais aucune piste libre")
+            running(ctx, data)
+        }
     }
 
   // ─────────────────────────────────────────────

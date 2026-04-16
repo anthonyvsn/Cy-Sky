@@ -100,6 +100,13 @@ object ControlTowerCommand {
   final case class CancelFlight(flightId: String)
     extends ControlTowerCommand
 
+  /** Injecter un avion d'urgence — spawné par EventInjector */
+  final case class InjectEmergencyArrival(urgency: UrgencyLevel, targetTime: LocalDateTime)
+    extends ControlTowerCommand
+
+  /** Fermer une piste disponible aléatoire */
+  case object InjectRunwayClosure extends ControlTowerCommand
+
   /** Tick de l'horloge simulée — avance le temps de la simulation */
   final case class Tick(simulatedTime: LocalDateTime)
     extends ControlTowerCommand
@@ -203,4 +210,19 @@ object PetriNetReply {
   final case class DeadlockStatus(hasDeadlock: Boolean)        extends PetriNetReply
   final case class PlanVerdict(valid: Boolean, reason: String, score: Int) extends PetriNetReply
   final case class InvariantResult(holds: Boolean, witness: Option[String]) extends PetriNetReply
+}
+
+// ───────────────────────────────────────────────────────────────
+// Messages de l'EventInjectorActor
+// ───────────────────────────────────────────────────────────────
+sealed trait EventInjectorCommand
+
+object EventInjectorCommand {
+  import cysky.model.InjectedEvent
+
+  /** Ajouter un événement depuis le front */
+  final case class AddEvent(event: InjectedEvent) extends EventInjectorCommand
+
+  /** Tick de l'horloge simulée — déclenche les événements arrivant à échéance */
+  final case class Tick(simTime: LocalDateTime) extends EventInjectorCommand
 }

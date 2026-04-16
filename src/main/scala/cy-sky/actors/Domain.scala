@@ -119,6 +119,36 @@ object GarageState {
 }
 
 // ─────────────────────────────────────────────
+// EventType — types d'événements injectables dynamiquement
+// ─────────────────────────────────────────────
+sealed trait EventType {
+  def displayName: String
+}
+
+object EventType {
+  case object EmergencyArrival   extends EventType { val displayName = "Atterrissage d'urgence" }
+  case object RunwayClosure      extends EventType { val displayName = "Fermeture de piste"     }
+  case object FlightDelay        extends EventType { val displayName = "Retard de vol"           }
+  case object FlightCancellation extends EventType { val displayName = "Annulation de vol"       }
+}
+
+// ─────────────────────────────────────────────
+// InjectedEvent — événement créé depuis le front
+// et mis en file d'attente par EventInjectorActor
+// ─────────────────────────────────────────────
+final case class InjectedEvent(
+  id:           String,
+  eventType:    EventType,
+  targetHour:   Int,
+  targetMinute: Int,
+  urgencyLevel: UrgencyLevel,
+  note:         String  = "",
+  status:       String  = "pending"
+) {
+  def targetTimeStr: String = f"$targetHour%02d:$targetMinute%02d"
+}
+
+// ─────────────────────────────────────────────
 // Données immuables d'un vol planifié
 // Généré par le ScheduleGenerator, partagé entre les deux arbres
 // ─────────────────────────────────────────────
