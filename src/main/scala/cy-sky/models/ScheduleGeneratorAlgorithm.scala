@@ -14,7 +14,7 @@ object ScheduleGeneratorAlgorithm {
     seed        : Long,
     startTime   : LocalTime,
     endTime     : LocalTime
-  ): Map[String, List[Flight]] = {
+  ): Map[String, List[AircraftFlight]] = {
 
     val rng          = new Random(seed)
     val startMin     = startTime.getHour * 60 + startTime.getMinute
@@ -31,7 +31,7 @@ object ScheduleGeneratorAlgorithm {
     def overlaps(a: Slot, b: Slot): Boolean =
       a.startMin < b.endMin && b.startMin < a.endMin
 
-    def airplanesOnGroundAt(t: Int, placed: List[(Flight, Flight)]): Int =
+    def airplanesOnGroundAt(t: Int, placed: List[(AircraftFlight, AircraftFlight)]): Int =
       placed.count { case (arr, dep) =>
         arr.scheduledTime.getHour * 60 + arr.scheduledTime.getMinute <= t &&
         dep.scheduledTime.getHour * 60 + dep.scheduledTime.getMinute > t
@@ -48,12 +48,12 @@ object ScheduleGeneratorAlgorithm {
     // runwaySlots : slots occupés par piste
     // placedPairs : toutes les paires (arrivée, départ) placées toutes pistes confondues
     val (_, allPairs) = runwayIds.foldLeft(
-      (Map.empty[String, List[Slot]], List.empty[(String, Flight, Flight)])
+      (Map.empty[String, List[Slot]], List.empty[(String, AircraftFlight, AircraftFlight)])
     ) { case ((runwaySlots, placedPairs), runwayId) =>
 
       val slotsForThisRunway = runwaySlots.getOrElse(runwayId, List.empty)
 
-      val newPairs = candidates.foldLeft(List.empty[(Flight, Flight)]) { case (acc, arrMin) =>
+      val newPairs = candidates.foldLeft(List.empty[(AircraftFlight, AircraftFlight)]) { case (acc, arrMin) =>
         if (acc.size >= maxAirplanes) acc
         else {
           val depMin       = arrMin + landingMin + groundMin
@@ -76,7 +76,7 @@ object ScheduleGeneratorAlgorithm {
             val airplaneId = s"PLANE_${runwayId}_$idx"
             val dest       = randomDestination(rng)
 
-            val arrival = Flight(
+            val arrival = AircraftFlight(
               flightId        = s"${terminalId}_${runwayId}_ARR$idx",
               airplaneId      = airplaneId,
               runway          = runwayId,
@@ -84,7 +84,7 @@ object ScheduleGeneratorAlgorithm {
               destination     = dest,
               kind            = Arrival
             )
-            val departure = Flight(
+            val departure = AircraftFlight(
               flightId        = s"${terminalId}_${runwayId}_DEP$idx",
               airplaneId      = airplaneId,
               runway          = runwayId,
@@ -110,7 +110,7 @@ object ScheduleGeneratorAlgorithm {
     }
 
     allPairs.groupMap(_._1) { case (_, a, d) => List(a, d) }
-      .map { case (rwy, pairs) => rwy -> pairs.flatten }
+      .map { case (rwy, pairs) => rwy -> pairs.flatten[AircraftFlight] }
   }
 
   private val destinations = Vector(

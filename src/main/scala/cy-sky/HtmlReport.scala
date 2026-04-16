@@ -1,6 +1,6 @@
 package cysky
 
-import cysky.models.{ Flight, Arrival, Departure }
+import cysky.models.{ AircraftFlight => Flight, Arrival, Departure }
 import scala.io.Source
 
 object HtmlReport {

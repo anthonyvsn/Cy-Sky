@@ -69,8 +69,6 @@ object Main extends App {
   println("─" * 60)
 
   // ── Guardian ─────────────────────────────────────────────────
-  // Typé Done : reçoit Done quand le ClockActor s'arrête (watchWith),
-  // puis appelle ctx.system.terminate() pour fermer proprement.
   val rootBehavior: Behavior[Done] = Behaviors.setup[Done] { ctx =>
 
     // 1. Tour de contrôle (spawne pistes et garages en interne)

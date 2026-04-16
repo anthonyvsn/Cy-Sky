@@ -1,7 +1,7 @@
 package cysky.models
 
 import akka.actor.typed.ActorRef
-import cysky.models.Flight
+import cysky.models.AircraftFlight
 import java.time.LocalTime
 
 object ScheduleGeneratorProtocol {
@@ -18,7 +18,7 @@ object ScheduleGeneratorProtocol {
 
   final case class ScheduleGenerated(
     terminalId: String,
-    schedule  : Map[String, List[Flight]]
+    schedule  : Map[String, List[AircraftFlight]]
   )
 
 }

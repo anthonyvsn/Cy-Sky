@@ -3,7 +3,7 @@ package cysky.actors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import cysky.model._
-import cysky.models.{Flight, Arrival, Departure}
+import cysky.models.{AircraftFlight => Flight, Arrival, Departure}
 import cysky.protocol._
 import cysky.protocol.ControlTowerCommand._
 import cysky.protocol.AirplaneCommand.{LandingAuthorized, TakeoffAuthorized, TaxiToGarage}
