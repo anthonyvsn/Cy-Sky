@@ -11,6 +11,7 @@ import cysky.protocol.GarageCommand.ParkRequest
 import cysky.SimState
 import java.time.{LocalDate, LocalDateTime}
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 // ═══════════════════════════════════════════════════════════════
 // TowerControlActor — Akka Typed, style fonctionnel pur
@@ -57,21 +58,23 @@ object TowerControlActor {
   //   simDate          : date du jour simulé
   // ─────────────────────────────────────────────
   final case class TowerData(
-    runways:           Map[String, ActorRef[RunwayCommand]],
-    garages:           Map[String, ActorRef[GarageCommand]],
-    airplanes:         Map[String, ActorRef[AirplaneCommand]],
-    schedule:          Map[String, List[Flight]],
-    landingQueue:      List[PendingLanding],
-    takeoffQueue:      List[PendingTakeoff],
-    runwayOccupancy:   Map[String, String],   // runwayId -> airplaneId (atterrissages)
-    takeoffOccupancy:  Map[String, String],   // runwayId -> airplaneId (décollages)
-    freeRunways:       Set[String],
-    freeGarages:       Set[String],
-    launchedAirplanes: Set[String],
-    simDate:           LocalDate,
-    simTime:           LocalDateTime,
-    flightStates:      Map[String, String],   // airplaneId -> état lisible
-    tickCount:         Int                    // compteur de ticks pour throttle dashboard
+    runways:              Map[String, ActorRef[RunwayCommand]],
+    garages:              Map[String, ActorRef[GarageCommand]],
+    airplanes:            Map[String, ActorRef[AirplaneCommand]],
+    schedule:             Map[String, List[Flight]],
+    landingQueue:         List[PendingLanding],
+    takeoffQueue:         List[PendingTakeoff],
+    runwayOccupancy:      Map[String, String],   // runwayId -> airplaneId (atterrissages)
+    takeoffOccupancy:     Map[String, String],   // runwayId -> airplaneId (décollages)
+    freeRunways:          Set[String],
+    freeGarages:          Set[String],
+    launchedAirplanes:    Set[String],
+    simDate:              LocalDate,
+    simTime:              LocalDateTime,
+    flightStates:         Map[String, String],   // airplaneId -> état lisible
+    tickCount:            Int,                   // compteur de ticks pour throttle dashboard
+    scheduleManagerRef:   ActorRef[ScheduleManagerCommand],
+    notifiedEventIds:     Set[String]            // IDs d'InjectedEvent déjà transmis au ScheduleManager
   )
 
   private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
@@ -115,22 +118,38 @@ object TowerControlActor {
         s"${runways.size} piste(s), ${garages.size} garage(s), $totalFlights vol(s) planifiés"
       )
 
+      // Spawn du ScheduleManager (mode Controle : vérification Pétri active)
+      val runwayIds = runways.keySet.toList.sorted
+      val scheduleManagerRef = ctx.spawn(
+        ScheduleManagerActor(
+          towerRef    = ctx.self,
+          schedule    = schedule,
+          runwayIds   = runwayIds,
+          runwayCount = runwayCount,
+          garageCount = garageCount,
+          mode        = ScheduleManagerActor.Controle
+        ),
+        "schedule-manager"
+      )
+
       val data = TowerData(
-        runways           = runways,
-        garages           = garages,
-        airplanes         = Map.empty,
-        schedule          = schedule,
-        landingQueue      = List.empty,
-        takeoffQueue      = List.empty,
-        runwayOccupancy   = Map.empty,
-        takeoffOccupancy  = Map.empty,
-        freeRunways       = runways.keySet,
-        freeGarages       = garages.keySet,
-        launchedAirplanes = Set.empty,
-        simDate           = simDate,
-        simTime           = simDate.atTime(6, 0),
-        flightStates      = Map.empty,
-        tickCount         = 0
+        runways              = runways,
+        garages              = garages,
+        airplanes            = Map.empty,
+        schedule             = schedule,
+        landingQueue         = List.empty,
+        takeoffQueue         = List.empty,
+        runwayOccupancy      = Map.empty,
+        takeoffOccupancy     = Map.empty,
+        freeRunways          = runways.keySet,
+        freeGarages          = garages.keySet,
+        launchedAirplanes    = Set.empty,
+        simDate              = simDate,
+        simTime              = simDate.atTime(6, 0),
+        flightStates         = Map.empty,
+        tickCount            = 0,
+        scheduleManagerRef   = scheduleManagerRef,
+        notifiedEventIds     = Set.empty
       )
       running(ctx, data)
     }
@@ -148,13 +167,15 @@ object TowerControlActor {
 
       // ── Tick horloge simulée ──────────────────────────────────
       case Tick(simTime) =>
-        val d1 = spawnDueAirplanes(ctx, data.copy(simTime = simTime, tickCount = data.tickCount + 1), simTime)
-        d1.runways.values.foreach(_ ! RunwayCommand.Tick(simTime))
-        d1.garages.values.foreach(_ ! GarageCommand.Tick(simTime))
-        d1.airplanes.values.foreach(_ ! AirplaneCommand.Tick(simTime))
+        val d0 = data.copy(simTime = simTime, tickCount = data.tickCount + 1)
+        val d1 = notifyScheduleManager(ctx, d0)
+        val d2 = spawnDueAirplanes(ctx, d1, simTime)
+        d2.runways.values.foreach(_ ! RunwayCommand.Tick(simTime))
+        d2.garages.values.foreach(_ ! GarageCommand.Tick(simTime))
+        d2.airplanes.values.foreach(_ ! AirplaneCommand.Tick(simTime))
         // Mise à jour du state partagé à chaque tick (AtomicReference, coût négligeable)
-        SimState.update(d1)
-        running(ctx, d1)
+        SimState.update(d2)
+        running(ctx, d2)
 
       // ── Demande d'atterrissage standard ──────────────────────
       case RequestLanding(airplaneId, urgency, replyTo) =>
@@ -204,6 +225,39 @@ object TowerControlActor {
         running(ctx, data.copy(freeGarages = data.freeGarages + garageId))
 
       // ── Replanification ───────────────────────────────────────
+      case FlightAddedByManager(newSchedule) =>
+        val added = newSchedule.values.flatten.count(_.kind == Arrival) -
+                    data.schedule.values.flatten.count(_.kind == Arrival)
+        ctx.log.info(s"[TowerControl] ScheduleManager a ajouté $added vol(s) — schedule mis à jour")
+        running(ctx, data.copy(schedule = newSchedule))
+
+      // ── BOOM piste (conflit atterrissage) ─────────────────────
+      case BoomRunway(runway, planes) =>
+        ctx.log.warn("=" * 60)
+        ctx.log.warn(s"[TowerControl] 💥 BOOM — CONFLIT PISTE $runway")
+        planes.foreach(p => ctx.log.warn(s"  💥 BOOM — avion $p"))
+        ctx.log.warn("=" * 60)
+        SimState.addBoom(s"Collision piste $runway — ${planes.mkString(", ")}")
+        running(ctx, applyBoomRunway(ctx, data, runway, planes))
+
+      // ── BOOM taxi (conflit taxi-out / départ) ─────────────────
+      case BoomTaxi(runway, planes) =>
+        ctx.log.warn("=" * 60)
+        ctx.log.warn(s"[TowerControl] 💥 BOOM — CONFLIT TAXI sur voie $runway")
+        planes.foreach(p => ctx.log.warn(s"  💥 BOOM — avion $p"))
+        ctx.log.warn("=" * 60)
+        SimState.addBoom(s"Collision taxi $runway — ${planes.mkString(", ")}")
+        running(ctx, applyBoomTaxi(ctx, data, runway, planes))
+
+      // ── BOOM garage (débordement gates) ──────────────────────
+      case BoomGarage(planes) =>
+        ctx.log.warn("=" * 60)
+        ctx.log.warn(s"[TowerControl] 💥 BOOM — DÉBORDEMENT GARAGE — tous les avions annulés")
+        data.airplanes.keys.foreach(p => ctx.log.warn(s"  💥 BOOM — avion $p"))
+        ctx.log.warn("=" * 60)
+        SimState.addBoom(s"Débordement garage — ${planes.mkString(", ")}")
+        running(ctx, applyBoomGarage(ctx, data, planes))
+
       case RescheduleFlights(newPlan) =>
         ctx.log.info(s"[TowerControl] Replanification : ${newPlan.size} vol(s) reçus")
         running(ctx, data)
@@ -283,6 +337,50 @@ object TowerControlActor {
         launchedAirplanes = d.launchedAirplanes + arrival.airplaneId,
         flightStates      = d.flightStates + (arrival.airplaneId -> "En approche")
       )
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Notifier le ScheduleManager 30 minutes simulées avant chaque vol
+  //
+  // Pour chaque vol Arrival dont l'heure planifiée est dans les
+  // 30 prochaines minutes simulées et qui n'a pas encore été notifié,
+  // envoie PrepareNewFlight au ScheduleManager.
+  // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // Notifier le ScheduleManager 30 minutes simulées avant chaque
+  // InjectedEvent (événements ajoutés via le dashboard).
+  //
+  // Le déclencheur = targetTime − 30 min.
+  // Dès que simTime atteint ce seuil, PrepareNewFlight est envoyé.
+  // notifiedEventIds garantit un envoi unique par événement.
+  // ─────────────────────────────────────────────
+  private def notifyScheduleManager(
+    ctx:  ActorContext[ControlTowerCommand],
+    data: TowerData
+  ): TowerData = {
+    val simMin = data.simTime.toLocalTime.getHour * 60 +
+                 data.simTime.toLocalTime.getMinute
+
+    val toNotify = SimState.injectedEventsSnapshot.filter { e =>
+      !data.notifiedEventIds.contains(e.id) && {
+        val triggerMin = e.targetHour * 60 + e.targetMinute - 30
+        triggerMin == simMin
+      }
+    }
+
+    if (toNotify.isEmpty) data
+    else {
+      toNotify.foreach { e =>
+        ctx.log.info(
+          s"[TowerControl ${fmt(data.simTime)}] Événement ${e.id} (${e.eventType.displayName}) " +
+          s"dans 30 min → ScheduleManager notifié (arrivée cible ${e.targetTimeStr})"
+        )
+        data.scheduleManagerRef ! ScheduleManagerCommand.PrepareNewFlight(
+          e.id, data.simTime, e.targetHour, e.targetMinute
+        )
+      }
+      data.copy(notifiedEventIds = data.notifiedEventIds ++ toNotify.map(_.id))
     }
   }
 
@@ -381,4 +479,87 @@ object TowerControlActor {
     pending: PendingLanding
   ): List[PendingLanding] =
     (pending :: queue).sortBy(_.urgency.priorityScore)(Ordering.Int.reverse)
+
+  // ─────────────────────────────────────────────
+  // BOOM helpers
+  // ─────────────────────────────────────────────
+
+  /** Conflit piste ou taxi.
+   *  - BOOM uniquement pour les 2 avions en conflit (planes).
+   *  - "Annulé" pour les autres vols FUTURS (pas encore lancés) sur cette piste.
+   *  - Les avions actifs (déjà en vol/sol) ne sont PAS touchés.
+   *  - Schedule intact pour l'affichage frontend. */
+  private def applyBoomRunway(
+    ctx:    ActorContext[ControlTowerCommand],
+    data:   TowerData,
+    runway: String,
+    planes: List[String]
+  ): TowerData = {
+    // Vols planifiés sur cette piste non encore lancés (futurs uniquement)
+    val futureUnlaunched = data.schedule.getOrElse(runway, Nil)
+      .filter(_.kind == Arrival)
+      .map(_.airplaneId)
+      .filterNot(data.launchedAirplanes.contains)
+
+    // Divert uniquement les BOOM planes qui sont actives
+    val boomActive = planes.filter(data.airplanes.contains)
+    boomActive.foreach(id => data.airplanes(id) ! AirplaneCommand.Divert)
+
+    // États : BOOM pour les 2 ciblés, Annulé pour les autres futurs non lancés
+    val boomStates     = planes.map(_ -> "💥 BOOM").toMap
+    val cancelStates   = futureUnlaunched.filterNot(planes.contains).map(_ -> "Annulé").toMap
+    val affectedPlanes = planes.toSet ++ futureUnlaunched
+
+    data.copy(
+      airplanes         = data.airplanes -- boomActive,
+      flightStates      = data.flightStates ++ boomStates ++ cancelStates,
+      launchedAirplanes = data.launchedAirplanes ++ affectedPlanes,
+      freeRunways       = data.freeRunways + runway,
+      runwayOccupancy   = data.runwayOccupancy  - runway,
+      takeoffOccupancy  = data.takeoffOccupancy - runway,
+      landingQueue      = data.landingQueue.filterNot(p => affectedPlanes(p.airplaneId)),
+      takeoffQueue      = data.takeoffQueue.filterNot(p => affectedPlanes(p.airplaneId))
+    )
+  }
+
+  /** Conflit taxi : même logique (même ressource piste de départ). */
+  private def applyBoomTaxi(
+    ctx:    ActorContext[ControlTowerCommand],
+    data:   TowerData,
+    runway: String,
+    planes: List[String]
+  ): TowerData = applyBoomRunway(ctx, data, runway, planes)
+
+  /** Débordement garage.
+   *  - BOOM pour les 2 avions ciblés (planes).
+   *  - "Annulé" pour tous les vols FUTURS non encore lancés (toutes pistes).
+   *  - Les avions actifs ne sont PAS touchés. */
+  private def applyBoomGarage(
+    ctx:    ActorContext[ControlTowerCommand],
+    data:   TowerData,
+    planes: List[String]
+  ): TowerData = {
+    // Divert uniquement les BOOM planes actives
+    val boomActive = planes.filter(data.airplanes.contains)
+    boomActive.foreach(id => data.airplanes(id) ! AirplaneCommand.Divert)
+
+    // Tous les futurs non lancés (toutes pistes)
+    val futureUnlaunched = data.schedule.values.flatten.toList
+      .filter(_.kind == Arrival)
+      .map(_.airplaneId)
+      .filterNot(data.launchedAirplanes.contains)
+      .distinct
+
+    val boomStates   = planes.map(_ -> "💥 BOOM").toMap
+    val cancelStates = futureUnlaunched.filterNot(planes.contains).map(_ -> "Annulé").toMap
+    val affected     = planes.toSet ++ futureUnlaunched
+
+    data.copy(
+      airplanes         = data.airplanes -- boomActive,
+      flightStates      = data.flightStates ++ boomStates ++ cancelStates,
+      launchedAirplanes = data.launchedAirplanes ++ affected,
+      landingQueue      = data.landingQueue.filterNot(p => affected(p.airplaneId)),
+      takeoffQueue      = data.takeoffQueue.filterNot(p => affected(p.airplaneId))
+    )
+  }
 }

@@ -5,6 +5,7 @@ import akka.actor.typed.{ActorSystem, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import cysky.actors.{TowerControlActor, ClockActor}
 import cysky.models.ScheduleGeneratorAlgorithm
+import cysky.petri.PetriScheduleVerifier
 import java.time.{LocalDate, LocalTime}
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -52,9 +53,20 @@ object Main extends App {
     endTime      = SIM_END
   )
 
+  SimState.setSchedule(schedule)
   val totalFlights = schedule.values.flatten.size / 2
   println(s"Planning généré : $totalFlights vols sur ${schedule.size} piste(s)")
   println(s"Durée simulation réelle estimée : ~${SIM_START.until(SIM_END, java.time.temporal.ChronoUnit.MINUTES) * TICK_INTERVAL.toMillis / 1000} secondes")
+  println("─" * 60)
+
+  // ── Vérification Pétri du schedule ───────────────────────────
+  println("Vérification réseau de Pétri...")
+  val verifResult = PetriScheduleVerifier.verify(schedule, RUNWAY_COUNT, GARAGE_COUNT)
+  println(verifResult.report)
+  if (!verifResult.valid) {
+    println("⚠ Schedule invalide — correction nécessaire avant de lancer la simulation.")
+    System.exit(1)
+  }
   println("─" * 60)
 
   // ── Démarrage du serveur HTTP ─────────────────────────────────

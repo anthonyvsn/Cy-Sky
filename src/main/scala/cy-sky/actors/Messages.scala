@@ -2,6 +2,7 @@ package cysky.protocol
 
 import akka.actor.typed.ActorRef
 import cysky.model._
+import cysky.models.AircraftFlight
 import java.time.LocalDateTime
 
 // ═══════════════════════════════════════════════════════════════
@@ -90,6 +91,26 @@ object ControlTowerCommand {
 
   /** Le ScheduleManager envoie un nouveau plan optimisé */
   final case class RescheduleFlights(newPlan: List[FlightData])
+    extends ControlTowerCommand
+
+  /** Le ScheduleManager a ajouté un nouveau vol — schedule mis à jour */
+  final case class FlightAddedByManager(newSchedule: Map[String, List[AircraftFlight]])
+    extends ControlTowerCommand
+
+  // ── Commandes BOOM — déclenchées par le réseau de Pétri ────────
+
+  /** Conflit piste (atterrissage) : BOOM pour les avions concernés
+   *  + annulation de tous les vols sur cette piste. */
+  final case class BoomRunway(runway: String, boomPlanes: List[String])
+    extends ControlTowerCommand
+
+  /** Conflit taxi (départ) : BOOM pour les avions concernés
+   *  + annulation de tous les avions utilisant cette voie de taxi. */
+  final case class BoomTaxi(runway: String, boomPlanes: List[String])
+    extends ControlTowerCommand
+
+  /** Débordement garage : annulation de TOUS les avions de l'aéroport. */
+  final case class BoomGarage(boomPlanes: List[String])
     extends ControlTowerCommand
 
   /** Retarder un vol spécifique */
@@ -202,6 +223,24 @@ object PetriNetCommand {
     formula: String,
     replyTo: ActorRef[PetriNetReply]
   ) extends PetriNetCommand
+}
+
+// ───────────────────────────────────────────────────────────────
+// Messages du ScheduleManagerActor
+// ───────────────────────────────────────────────────────────────
+sealed trait ScheduleManagerCommand
+
+object ScheduleManagerCommand {
+
+  /** La TowerControl envoie ce message 30 min simulées avant un événement.
+   *  arrivalHour / arrivalMinute = heure cible saisie dans le formulaire
+   *  (= heure d'arrivée souhaitée du nouveau vol). */
+  final case class PrepareNewFlight(
+    triggeringEventId: String,
+    simTime:           LocalDateTime,
+    arrivalHour:       Int,
+    arrivalMinute:     Int
+  ) extends ScheduleManagerCommand
 }
 
 sealed trait PetriNetReply

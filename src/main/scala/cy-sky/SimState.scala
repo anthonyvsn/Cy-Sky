@@ -2,7 +2,8 @@ package cysky
 
 import cysky.actors.TowerControlActor.TowerData
 import cysky.model.InjectedEvent
-import java.util.concurrent.atomic.AtomicReference
+import cysky.models.AircraftFlight
+import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.concurrent.CountDownLatch
 
 // ═══════════════════════════════════════════════════════════════
@@ -14,10 +15,24 @@ import java.util.concurrent.CountDownLatch
 // ═══════════════════════════════════════════════════════════════
 object SimState {
 
-  private val ref           = new AtomicReference[Option[TowerData]](None)
-  private val _started      = new AtomicReference[Boolean](false)
-  private val _finished     = new AtomicReference[Boolean](false)
+  private val ref            = new AtomicReference[Option[TowerData]](None)
+  private val _started       = new AtomicReference[Boolean](false)
+  private val _finished      = new AtomicReference[Boolean](false)
   private val injectedEvents = new AtomicReference[List[InjectedEvent]](List.empty)
+  private val scheduleRef    = new AtomicReference[Map[String, List[AircraftFlight]]](Map.empty)
+
+  // ── Alertes BOOM ─────────────────────────────────────────────
+  private val _boomVersion = new AtomicInteger(0)
+  private val _boomMessage = new AtomicReference[String]("")
+
+  /** Enregistre un nouvel événement BOOM. Thread-safe. */
+  def addBoom(message: String): Unit = {
+    _boomMessage.set(message)
+    _boomVersion.incrementAndGet()
+  }
+
+  def boomVersion: Int    = _boomVersion.get()
+  def boomMessage: String = _boomMessage.get()
 
   /** Décompté à 0 quand l'utilisateur clique Start */
   val startLatch = new CountDownLatch(1)
@@ -42,4 +57,7 @@ object SimState {
     injectedEvents.getAndUpdate(list => e :: list)
 
   def injectedEventsSnapshot: List[InjectedEvent] = injectedEvents.get()
+
+  def setSchedule(s: Map[String, List[AircraftFlight]]): Unit = scheduleRef.set(s)
+  def scheduleSnapshot: Map[String, List[AircraftFlight]]     = scheduleRef.get()
 }
