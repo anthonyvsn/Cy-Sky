@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sbt compile *)",
+      "Bash(cmd /c \"where sbt\")",
+      "Bash(cmd /c \"sbt compile\")",
+      "Bash(cmd /c \"cd /d H:\\\\\\\\Desktop\\\\\\\\scalaProject\\\\\\\\Cy-Sky && sbt compile 2>&1\")",
+      "Bash(cmd /c \"cd /d H:\\\\\\\\Desktop\\\\\\\\scalaProject\\\\\\\\Cy-Sky && sbt.bat compile\")",
+      "Bash(cmd /c \"java -version 2>&1 & scala -version 2>&1 & where java 2>&1 & where scala 2>&1\")",
+      "Bash(cmd /c \"java -version\")",
+      "Bash(cmd /c \"where java\")",
+      "Bash(cmd /c \"where scala\")",
+      "Bash(cmd /c \"where cs\")"
+    ]
+  }
+}

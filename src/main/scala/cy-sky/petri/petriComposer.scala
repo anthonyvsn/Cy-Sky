@@ -96,4 +96,19 @@ object PetriComposer {
       )
     }.reduce(blockDiag)
   }
+
+  // --- Transitions franchissables : toutes celles dont le pré-condition est satisfaite ---
+  def enabledTransitions(m: PetriModule): Vector[Int] =
+    m.transitions.indices.toVector.filter { j =>
+      m.pre.zipWithIndex.forall { case (preRow, i) => m.marking(i) >= preRow(j) }
+    }
+
+  // --- Franchir une transition : M' = M - Pre[t] + Post[t] ---
+  def fireTransition(m: PetriModule, t: Int): PetriModule = {
+    require(t >= 0 && t < m.transitions.length, s"Transition $t hors limites")
+    val newMarking = m.marking.zipWithIndex.map { case (tokens, i) =>
+      tokens - m.pre(i)(t) + m.post(i)(t)
+    }
+    m.copy(marking = newMarking)
+  }
 }

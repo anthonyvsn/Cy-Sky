@@ -18,7 +18,7 @@ object Main extends App {
     pre  = Vector(
       Vector(0, 0),   // BufferGarage
       Vector(1, 0),   // Garage         → lockGarage consomme 1 avion
-      Vector(0, 0),   // G_open
+      Vector(1, 0),   // G_open         → lockGarage doit consommer open (sinon accumulation)
       Vector(0, 1)    // G_close        → unlockGarage consomme le verrou
     ),
     post = Vector(
@@ -37,7 +37,7 @@ object Main extends App {
     pre  = Vector(
       Vector(0, 0, 0),
       Vector(0, 1, 0),
-      Vector(1, 0, 0),
+      Vector(1, 1, 0),   // TW_open → lockTaxiWay doit consommer open
       Vector(0, 0, 1)
     ),
     post = Vector(
@@ -50,20 +50,21 @@ object Main extends App {
   )
 
   // === MODULE TRACK (base) ===
+  // Colonnes : landing | lockTrack | unlockTrack | takeoff | addOnTrack
   val trackBase = PetriModule(
     places      = Vector("BufferTrack", "Track", "TR_open", "TR_close"),
-    transitions = Vector("landing", "lockTrack", "unlockTrack", "takeoff"),
+    transitions = Vector("landing", "lockTrack", "unlockTrack", "takeoff", "addOnTrack"),
     pre  = Vector(
-      Vector(0, 0, 0, 0),
-      Vector(0, 1, 0, 0),
-      Vector(1, 0, 0, 1),
-      Vector(0, 0, 1, 0)
+      Vector(0, 0, 0, 0, 0),  // BufferTrack
+      Vector(0, 1, 0, 0, 0),  // Track        → lockTrack consomme
+      Vector(1, 1, 0, 1, 1),  // TR_open      → lockTrack doit consommer open + landing/takeoff/addOnTrack
+      Vector(0, 0, 1, 0, 0)   // TR_close     → unlockTrack consomme le verrou
     ),
     post = Vector(
-      Vector(0, 0, 1, 0),
-      Vector(1, 0, 0, 0),
-      Vector(1, 0, 1, 1),
-      Vector(0, 1, 0, 0)
+      Vector(0, 0, 1, 0, 0),  // BufferTrack  → unlockTrack libère
+      Vector(1, 0, 0, 0, 1),  // Track        → landing & addOnTrack placent un avion
+      Vector(1, 0, 1, 1, 1),  // TR_open      → self-loop pour landing/unlockTrack/takeoff/addOnTrack
+      Vector(0, 1, 0, 0, 0)   // TR_close     → lockTrack verrouille
     ),
     marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
   )
@@ -112,10 +113,12 @@ object Main extends App {
   )
 
   val system = (1 to N).foldLeft(withCount) { (sys, i) =>
-    val s1 = addArc(sys, "countPlanes",       s"takeoff_$i",  1, 0)
-    val s2 = addArc(s1,  "BufferCountPlanes", s"takeoff_$i",  0, 1)
-    val s3 = addArc(s2,  "BufferCountPlanes", s"landing_$i",  1, 0)
-    addArc(s3, "countPlanes",                 s"landing_$i",  0, 1)
+    val s1 = addArc(sys, "countPlanes",       s"takeoff_$i",     1, 0)
+    val s2 = addArc(s1,  "BufferCountPlanes", s"takeoff_$i",     0, 1)
+    val s3 = addArc(s2,  "BufferCountPlanes", s"landing_$i",     1, 0)
+    val s4 = addArc(s3,  "countPlanes",       s"landing_$i",     0, 1)
+    val s5 = addArc(s4,  "BufferCountPlanes", s"addOnTrack_$i",  1, 0)
+    addArc(s5,           "countPlanes",       s"addOnTrack_$i",  0, 1)
   }
 
   // === AFFICHAGE ===
@@ -160,4 +163,98 @@ object Main extends App {
   // === GÉNÉRATION DES SCHÉMAS ===
   PetriVisualizer.saveHtml(system, "petri_schema.html", "CY-SKY Orly")
   PetriVisualizer.saveDot(system, "petri_schema.dot", "CY-SKY Orly")
+
+  // =========================================================================
+  // === FONCTION DE VÉRIFICATION ============================================
+  // =========================================================================
+  // Vérifie les invariants structurels du réseau sur un marquage donné :
+  //   1. Aucun jeton négatif
+  //   2. Conservation globale : countPlanes + BufferCountPlanes == nMaxSystem
+  //   3. Exclusion mutuelle des verrous (open + close == 1 pour chaque module)
+  def verify(m: PetriModule): (Boolean, List[String]) = {
+    val errors = scala.collection.mutable.ListBuffer[String]()
+
+    // 1. Aucun jeton négatif
+    m.marking.zipWithIndex.foreach { case (tokens, i) =>
+      if (tokens < 0)
+        errors += s"Jeton négatif : ${m.places(i)} = $tokens"
+    }
+
+    // 2. Conservation : countPlanes + BufferCountPlanes == nMaxSystem
+    val iCount  = m.places.indexOf("countPlanes")
+    val iBuf    = m.places.indexOf("BufferCountPlanes")
+    if (iCount >= 0 && iBuf >= 0) {
+      val total = m.marking(iCount) + m.marking(iBuf)
+      if (total != nMaxSystem)
+        errors += s"Conservation violée : countPlanes(${m.marking(iCount)}) + BufferCountPlanes(${m.marking(iBuf)}) = $total ≠ $nMaxSystem"
+    }
+
+    // 3. Exclusion mutuelle des verrous (open XOR close == 1)
+    def checkLock(openName: String, closeName: String): Unit = {
+      val iO = m.places.indexOf(openName)
+      val iC = m.places.indexOf(closeName)
+      if (iO >= 0 && iC >= 0) {
+        val sum = m.marking(iO) + m.marking(iC)
+        if (sum != 1)
+          errors += s"Verrou incohérent : $openName(${m.marking(iO)}) + $closeName(${m.marking(iC)}) = $sum ≠ 1"
+      }
+    }
+    checkLock("G_open", "G_close")
+    (1 to N).foreach { i =>
+      checkLock(s"TW_open_$i", s"TW_close_$i")
+      checkLock(s"TR_open_$i", s"TR_close_$i")
+    }
+
+    val ok = errors.isEmpty
+    (ok, errors.toList)
+  }
+
+  // =========================================================================
+  // === TEST ALÉATOIRE (1000 transitions) ===================================
+  // =========================================================================
+  // Tire aléatoirement une transition franchissable à chaque étape.
+  // Vérifie les invariants après chaque franchissement.
+  // En cas de deadlock : affiche un avertissement et réinitialise l'état.
+  def randomTest(initial: PetriModule, steps: Int = 1000): Unit = {
+    import cysky.petri.PetriComposer.{enabledTransitions, fireTransition}
+    val rng     = new scala.util.Random(42)
+    var state   = initial
+    var fired   = 0
+    var deadlockCount = 0
+    var errorCount    = 0
+
+    println(s"\n=== TEST ALÉATOIRE ($steps transitions) ===")
+
+    for (step <- 1 to steps) {
+      val enabled = enabledTransitions(state)
+      if (enabled.isEmpty) {
+        println(s"  [DEADLOCK] Étape $step — aucune transition franchissable, réinitialisation")
+        deadlockCount += 1
+        state = initial
+      } else {
+        val tIdx  = enabled(rng.nextInt(enabled.length))
+        val tName = state.transitions(tIdx)
+        state = fireTransition(state, tIdx)
+        fired += 1
+
+        val (ok, errs) = verify(state)
+        if (!ok) {
+          println(s"  [ERREUR] Étape $step après T$tIdx ($tName) :")
+          errs.foreach(e => println(s"           • $e"))
+          errorCount += 1
+        }
+      }
+    }
+
+    println(s"  Transitions franchies    : $fired")
+    println(s"  Deadlocks rencontrés     : $deadlockCount")
+    println(s"  Violations d'invariants  : $errorCount")
+    if (errorCount == 0 && deadlockCount == 0)
+      println(s"  => Test REUSSI : aucune erreur sur $steps transitions")
+    else
+      println(s"  => Test ECHOUE")
+  }
+
+  // Lancement du test
+  randomTest(system)
 }
