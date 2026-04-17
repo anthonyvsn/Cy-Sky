@@ -8,6 +8,7 @@ import cysky.models.ScheduleGeneratorAlgorithm
 import java.time.{LocalDate, LocalTime}
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import cysky.petri._
 
 // ═══════════════════════════════════════════════════════════════
 // Main — simulation d'une journée aéroport CySky
@@ -41,6 +42,37 @@ object Main extends App {
 
   val TICK_INTERVAL: FiniteDuration     = 112.millis
   val SIM_STEP:      java.time.Duration = java.time.Duration.ofMinutes(1)
+
+  // ── TEST PETRI (AVANT SIMULATION) ─────────────────────────────
+  println("\n══════════ TEST PETRI ══════════")
+
+  val petri = PetriModule(
+    places = Vector("p1", "p2"),
+    transitions = Vector("t1"),
+    pre = Vector(
+      Vector(1),
+      Vector(0)
+    ),
+    post = Vector(
+      Vector(0),
+      Vector(1)
+    ),
+    marking = Vector(1, 0)
+  )
+
+  // Visualisation
+  PetriVisualizer.saveDot(petri, "test.dot", "Test Petri")
+  PetriVisualizer.saveHtml(petri, "test.html", "Test Petri")
+
+  // Analyse complète
+  PetriVerifier.analyzeAndReport(petri, "Test Petri")
+
+  // LTL
+  val noDeadlock = LTLChecker.noDeadlock(petri)
+  val ltlOK = LTLChecker.verify(petri, noDeadlock)
+
+  println(s"LTL noDeadlock : $ltlOK")
+  println("════════════════════════════════\n")
 
   // ── Génération du planning ────────────────────────────────────
   val schedule = ScheduleGeneratorAlgorithm.generate(

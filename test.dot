@@ -1,0 +1,13 @@
+digraph "Test Petri" {
+  rankdir=TB;
+  node [fontname="Helvetica",fontsize=11];
+  edge [fontname="Helvetica",fontsize=9];
+
+  "p1" [shape=circle,style=filled,fillcolor="#E1F5EE",fontcolor="#085041",label="p1\n*",width=1.1];
+  "p2" [shape=circle,style=filled,fillcolor="#E1F5EE",fontcolor="#085041",label="p2",width=1.1];
+
+  "t1" [shape=box,style="filled,rounded",fillcolor="#FAEEDA",fontcolor="#633806",height=0.4,width=1.4];
+
+  "p1" -> "t1";
+  "t1" -> "p2";
+}

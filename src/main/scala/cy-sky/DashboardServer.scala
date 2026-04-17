@@ -279,8 +279,8 @@ object DashboardServer {
 
   <!-- Ecran Start -->
   <div id="start-screen">
-    <p>La simulation est prete.<br>Cliquez sur Start pour lancer la journee à l'aéroport.</p>
-    <button id="btn-start" onclick="startSim()">&#9654; Demarrer la simulation</button>
+    <p>La simulation est prête.<br>Cliquez sur Start pour lancer la journée à l'aéroport.</p>
+    <button id="btn-start" onclick="startSim()">&#9654; Démarrer la simulation</button>
   </div>
 
   <!-- Dashboard live (cache jusqu au start) -->
