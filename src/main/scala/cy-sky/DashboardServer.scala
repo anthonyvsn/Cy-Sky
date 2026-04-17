@@ -268,18 +268,18 @@ object DashboardServer {
       <h1>&#9992; CySky &mdash; Live Dashboard</h1>
       <p>
         <span id="dot" class="live-dot off"></span>
-        <span id="status-label">En attente de demarrage...</span>
+        <span id="status-label">En attente du démarrage...</span>
       </p>
     </div>
     <div class="clock-box">
       <div id="clock" class="clock">--:--</div>
-      <div class="clock-label">Heure simulee</div>
+      <div class="clock-label">Heure simulée</div>
     </div>
   </header>
 
   <!-- Ecran Start -->
   <div id="start-screen">
-    <p>La simulation est prete.<br>Cliquez sur Start pour lancer la journee a l aeropport.</p>
+    <p>La simulation est prete.<br>Cliquez sur Start pour lancer la journee à l'aéroport.</p>
     <button id="btn-start" onclick="startSim()">&#9654; Demarrer la simulation</button>
   </div>
 
