@@ -16,48 +16,43 @@ object PetriVisualizer {
   //  GRAPHVIZ DOT
   // ============================================================
   def saveDot(m: PetriModule, filename: String, title: String): Unit = {
-    val sb = new StringBuilder
     val loops = selfLoops(m)
-    sb.append(s"""digraph "$title" {\n  rankdir=TB;\n  node [fontname="Helvetica",fontsize=11];\n  edge [fontname="Helvetica",fontsize=9];\n\n""")
 
-    m.places.zipWithIndex.foreach { case (p, i) =>
-      val tok = m.marking(i)
+    val placesStr = m.places.zipWithIndex.map { case (p, i) =>
+      val tok  = m.marking(i)
       val dots = if (tok > 0 && tok <= 5) "\\n" + ("* " * tok).trim else if (tok > 0) s"\\n[$tok]" else ""
-      val col = placeColor(p)
-      sb.append(s"""  "$p" [shape=circle,style=filled,fillcolor="${col._1}",fontcolor="${col._3}",label="$p$dots",width=1.1];\n""")
-    }
-    sb.append("\n")
+      val col  = placeColor(p)
+      s"""  "$p" [shape=circle,style=filled,fillcolor="${col._1}",fontcolor="${col._3}",label="$p$dots",width=1.1];"""
+    }.mkString("\n")
 
-    m.transitions.foreach { t =>
+    val transStr = m.transitions.map { t =>
       val col = transColor(t)
-      sb.append(s"""  "$t" [shape=box,style="filled,rounded",fillcolor="${col._1}",fontcolor="${col._3}",height=0.4,width=1.4];\n""")
-    }
-    sb.append("\n")
+      s"""  "$t" [shape=box,style="filled,rounded",fillcolor="${col._1}",fontcolor="${col._3}",height=0.4,width=1.4];"""
+    }.mkString("\n")
 
-    m.pre.zipWithIndex.foreach { case (row, i) =>
-      row.zipWithIndex.foreach { case (w, j) =>
-        if (w > 0 && !loops.contains((i, j))) {
-          val lbl = if (w > 1) s""" [label="$w"]""" else ""
-          sb.append(s"""  "${m.places(i)}" -> "${m.transitions(j)}"$lbl;\n""")
-        }
+    val preEdges = m.pre.zipWithIndex.flatMap { case (row, i) =>
+      row.zipWithIndex.collect { case (w, j) if w > 0 && !loops.contains((i, j)) =>
+        val lbl = if (w > 1) s""" [label="$w"]""" else ""
+        s"""  "${m.places(i)}" -> "${m.transitions(j)}"$lbl;"""
       }
-    }
+    }.mkString("\n")
 
-    m.post.zipWithIndex.foreach { case (row, i) =>
-      row.zipWithIndex.foreach { case (w, j) =>
-        if (w > 0 && !loops.contains((i, j))) {
-          val lbl = if (w > 1) s""" [label="$w"]""" else ""
-          sb.append(s"""  "${m.transitions(j)}" -> "${m.places(i)}"$lbl;\n""")
-        }
+    val postEdges = m.post.zipWithIndex.flatMap { case (row, i) =>
+      row.zipWithIndex.collect { case (w, j) if w > 0 && !loops.contains((i, j)) =>
+        val lbl = if (w > 1) s""" [label="$w"]""" else ""
+        s"""  "${m.transitions(j)}" -> "${m.places(i)}"$lbl;"""
       }
-    }
+    }.mkString("\n")
 
-    loops.foreach { case (i, j) =>
-      sb.append(s"""  "${m.places(i)}" -> "${m.transitions(j)}" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];\n""")
-    }
+    val loopEdges = loops.map { case (i, j) =>
+      s"""  "${m.places(i)}" -> "${m.transitions(j)}" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];"""
+    }.mkString("\n")
 
-    sb.append("}\n")
-    Files.write(Paths.get(filename), sb.toString.getBytes(StandardCharsets.UTF_8))
+    val dot =
+      s"""digraph "$title" {\n  rankdir=TB;\n  node [fontname="Helvetica",fontsize=11];\n  edge [fontname="Helvetica",fontsize=9];\n\n""" +
+      placesStr + "\n\n" + transStr + "\n\n" + preEdges + "\n" + postEdges + "\n" + loopEdges + "\n}\n"
+
+    Files.write(Paths.get(filename), dot.getBytes(StandardCharsets.UTF_8))
     println(s"[DOT] $filename")
   }
 
@@ -72,98 +67,78 @@ object PetriVisualizer {
 
     // --- Calcul des couches (BFS depuis les places avec jetons) ---
     // Chaque noeud : "p0","p1",...,"t0","t1",...
-    val visited = scala.collection.mutable.Set[String]()
-    val layers  = scala.collection.mutable.ArrayBuffer[Vector[String]]()
-
-    // Couche 0 : places avec marquage initial > 0
     val seeds = m.places.indices.filter(i => m.marking(i) > 0).map(i => s"p$i").toVector
-    if (seeds.nonEmpty) {
-      layers += seeds
-      visited ++= seeds
+
+    // BFS tail-récursif : (layers accumulées, noeuds visités)
+    @scala.annotation.tailrec
+    def bfs(layers: Vector[Vector[String]], visited: Set[String]): Vector[Vector[String]] = {
+      val last = layers.last
+      val placesInLast = last.filter(_.startsWith("p")).map(_.drop(1).toInt)
+      val transInLast  = last.filter(_.startsWith("t")).map(_.drop(1).toInt)
+
+      val newTrans = (for {
+        i <- placesInLast; j <- m.transitions.indices
+        if m.pre(i)(j) > 0 && !visited.contains(s"t$j")
+      } yield s"t$j").distinct.toVector
+
+      val (layers1, visited1) =
+        if (newTrans.nonEmpty) (layers :+ newTrans, visited ++ newTrans)
+        else (layers, visited)
+
+      val tIdx = if (newTrans.nonEmpty) newTrans.map(_.drop(1).toInt) else transInLast
+      val newPlaces = (for {
+        j <- tIdx; i <- m.places.indices
+        if m.post(i)(j) > 0 && !visited1.contains(s"p$i")
+      } yield s"p$i").distinct.toVector
+
+      val (layers2, visited2) =
+        if (newPlaces.nonEmpty) (layers1 :+ newPlaces, visited1 ++ newPlaces)
+        else (layers1, visited1)
+
+      if (newTrans.isEmpty && newPlaces.isEmpty) layers2
+      else bfs(layers2, visited2)
     }
 
-    var changed = true
-    while (changed) {
-      changed = false
-      val lastLayer = layers.last
+    val initLayers  = if (seeds.nonEmpty) Vector(seeds) else Vector(Vector.empty[String])
+    val initVisited = seeds.toSet
+    val rawLayers   = if (seeds.nonEmpty) bfs(initLayers, initVisited) else initLayers
 
-      // Si la derniere couche contient des places -> trouver les transitions connectees
-      val placesInLast  = lastLayer.filter(_.startsWith("p")).map(_.drop(1).toInt)
-      val transInLast   = lastLayer.filter(_.startsWith("t")).map(_.drop(1).toInt)
+    // Ajouter les noeuds non visités dans une couche finale
+    val allVisited = rawLayers.flatten.toSet
+    val remaining  = (m.places.indices.map(i => s"p$i") ++ m.transitions.indices.map(j => s"t$j"))
+      .filterNot(allVisited.contains).toVector
+    val layers = if (remaining.nonEmpty) rawLayers :+ remaining else rawLayers
 
-      if (placesInLast.nonEmpty) {
-        // Transitions qui consomment depuis ces places (pre > 0)
-        val nextTrans = (for {
-          i <- placesInLast
-          j <- m.transitions.indices
-          if m.pre(i)(j) > 0 && !visited.contains(s"t$j")
-        } yield s"t$j").distinct.toVector
-
-        if (nextTrans.nonEmpty) {
-          layers += nextTrans
-          visited ++= nextTrans
-          changed = true
-        }
-      }
-
-      if (transInLast.nonEmpty || (changed && layers.last.exists(_.startsWith("t")))) {
-        val tIdx = if (changed) layers.last.filter(_.startsWith("t")).map(_.drop(1).toInt)
-                   else transInLast
-        // Places produites par ces transitions (post > 0)
-        val nextPlaces = (for {
-          j <- tIdx
-          i <- m.places.indices
-          if m.post(i)(j) > 0 && !visited.contains(s"p$i")
-        } yield s"p$i").distinct.toVector
-
-        if (nextPlaces.nonEmpty) {
-          layers += nextPlaces
-          visited ++= nextPlaces
-          changed = true
-        }
-      }
-    }
-
-    // Ajouter les noeuds non visites dans une couche finale
-    val remaining = (m.places.indices.map(i => s"p$i") ++ m.transitions.indices.map(j => s"t$j"))
-      .filterNot(visited.contains).toVector
-    if (remaining.nonEmpty) layers += remaining
-
-    // --- Calcul des positions (x, y) ---
+    // --- Calcul des positions (x, y) via foldLeft ---
     val PADDING_X = 60
     val PADDING_Y = 50
     val LAYER_GAP = 90
-    val NODE_R = 24
-    val TRANS_W = 10
-    val TRANS_H = 28
+    val NODE_R    = 24
+    val TRANS_W   = 10
+    val TRANS_H   = 28
 
-    val positions = scala.collection.mutable.Map[String, (Double, Double)]()
-
-    layers.zipWithIndex.foreach { case (layer, li) =>
-      val y = PADDING_Y + li * LAYER_GAP
-      val n = layer.length
-      val totalWidth = 680.0 - 2 * PADDING_X
-      val gap = if (n > 1) totalWidth / (n - 1) else 0.0
-      val startX = if (n > 1) PADDING_X.toDouble else 340.0
-
-      layer.zipWithIndex.foreach { case (nodeId, ni) =>
-        val x = startX + ni * gap
-        positions(nodeId) = (x, y)
+    val positions: Map[String, (Double, Double)] =
+      layers.zipWithIndex.foldLeft(Map.empty[String, (Double, Double)]) { case (acc, (layer, li)) =>
+        val y          = PADDING_Y + li * LAYER_GAP
+        val n          = layer.length
+        val totalWidth = 680.0 - 2 * PADDING_X
+        val gap        = if (n > 1) totalWidth / (n - 1) else 0.0
+        val startX     = if (n > 1) PADDING_X.toDouble else 340.0
+        acc ++ layer.zipWithIndex.map { case (nodeId, ni) => nodeId -> (startX + ni * gap, y.toDouble) }
       }
-    }
 
-    val maxY = if (positions.nonEmpty) positions.values.map(_._2).max + LAYER_GAP else 500
+    val maxY    = if (positions.nonEmpty) positions.values.map(_._2).max + LAYER_GAP else 500
     val canvasH = (maxY + 60).toInt
 
     // --- JSON des noeuds ---
     val nodesJson = {
       val ps = m.places.zipWithIndex.map { case (p, i) =>
-        val col = placeColor(p)
+        val col      = placeColor(p)
         val (px, py) = positions.getOrElse(s"p$i", (340.0, 50.0))
         s"""{"id":"p$i","label":"$p","tokens":${m.marking(i)},"type":"place","x":$px,"y":$py,"fill":"${col._1}","stroke":"${col._2}","text":"${col._3}"}"""
       }
       val ts = m.transitions.zipWithIndex.map { case (t, j) =>
-        val col = transColor(t)
+        val col      = transColor(t)
         val (tx, ty) = positions.getOrElse(s"t$j", (340.0, 100.0))
         s"""{"id":"t$j","label":"$t","tokens":-1,"type":"trans","x":$tx,"y":$ty,"fill":"${col._1}","stroke":"${col._2}","text":"${col._3}"}"""
       }
@@ -171,24 +146,20 @@ object PetriVisualizer {
     }
 
     // --- JSON des arcs ---
-    val edgesBuf = scala.collection.mutable.ArrayBuffer[String]()
-
-    m.pre.zipWithIndex.foreach { case (row, i) =>
-      row.zipWithIndex.foreach { case (w, j) =>
-        if (w > 0 && !loops.contains((i, j)))
-          edgesBuf += s"""{"from":"p$i","to":"t$j","w":$w,"loop":false}"""
+    val preEdges = m.pre.zipWithIndex.flatMap { case (row, i) =>
+      row.zipWithIndex.collect { case (w, j) if w > 0 && !loops.contains((i, j)) =>
+        s"""{"from":"p$i","to":"t$j","w":$w,"loop":false}"""
       }
     }
-    m.post.zipWithIndex.foreach { case (row, i) =>
-      row.zipWithIndex.foreach { case (w, j) =>
-        if (w > 0 && !loops.contains((i, j)))
-          edgesBuf += s"""{"from":"t$j","to":"p$i","w":$w,"loop":false}"""
+    val postEdges = m.post.zipWithIndex.flatMap { case (row, i) =>
+      row.zipWithIndex.collect { case (w, j) if w > 0 && !loops.contains((i, j)) =>
+        s"""{"from":"t$j","to":"p$i","w":$w,"loop":false}"""
       }
     }
-    loops.foreach { case (i, j) =>
-      edgesBuf += s"""{"from":"p$i","to":"t$j","w":${m.pre(i)(j)},"loop":true}"""
+    val loopEdges = loops.map { case (i, j) =>
+      s"""{"from":"p$i","to":"t$j","w":${m.pre(i)(j)},"loop":true}"""
     }
-    val edgesJson = edgesBuf.mkString("[", ",", "]")
+    val edgesJson = (preEdges ++ postEdges ++ loopEdges).mkString("[", ",", "]")
 
     // --- Matrices HTML ---
     def matHtml(name: String, mat: Vector[Vector[Int]]): String = {
@@ -249,7 +220,7 @@ h3:first-child{margin-top:0}
 </style>
 </head><body>
 <div class="hd"><h1>$title</h1>
-<p>$nP places | $nT transitions | ${loops.size} self-loops | ${edgesBuf.size} arcs</p></div>
+<p>$nP places | $nT transitions | ${loops.size} self-loops | ${(preEdges.size + postEdges.size + loopEdges.size)} arcs</p></div>
 <div class="tabs">
 <button class="tab a" onclick="stab('g',this)">Reseau de Petri</button>
 <button class="tab" onclick="stab('m',this)">Matrices</button>
@@ -270,7 +241,7 @@ h3:first-child{margin-top:0}
 <div class="st"><span class="sv">$nP</span><span class="sl">places</span></div>
 <div class="st"><span class="sv">$nT</span><span class="sl">transitions</span></div>
 <div class="st"><span class="sv">${loops.size}</span><span class="sl">self-loops</span></div>
-<div class="st"><span class="sv">${edgesBuf.size}</span><span class="sl">arcs</span></div>
+<div class="st"><span class="sv">${(preEdges.size + postEdges.size + loopEdges.size)}</span><span class="sl">arcs</span></div>
 </div>
 <div class="mat">
 <h3>Marquage initial</h3>

@@ -7,44 +7,55 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.concurrent.CountDownLatch
 
 // ═══════════════════════════════════════════════════════════════
-// SimState — état partagé thread-safe entre le serveur HTTP
-// (thread Java) et le système d'acteurs (thread pool Akka).
+// SimSlot — état isolé pour une simulation (libre ou contrôle).
 //
-// AtomicReference garantit la visibilité sans synchronized.
-// CountDownLatch permet au Main de bloquer jusqu'au clic Start.
+// Chaque simulation a son propre TowerData, son propre état
+// finished et ses propres alertes BOOM.
 // ═══════════════════════════════════════════════════════════════
-object SimState {
+class SimSlot(val name: String) {
 
-  private val ref            = new AtomicReference[Option[TowerData]](None)
-  private val _started       = new AtomicReference[Boolean](false)
-  private val _finished      = new AtomicReference[Boolean](false)
-  private val injectedEvents = new AtomicReference[List[InjectedEvent]](List.empty)
-  private val scheduleRef    = new AtomicReference[Map[String, List[AircraftFlight]]](Map.empty)
-
-  // ── Alertes BOOM ─────────────────────────────────────────────
+  private val ref          = new AtomicReference[Option[TowerData]](None)
+  private val _finished    = new AtomicReference[Boolean](false)
   private val _boomVersion = new AtomicInteger(0)
   private val _boomMessage = new AtomicReference[String]("")
-
-  /** Enregistre un nouvel événement BOOM. Thread-safe. */
-  def addBoom(message: String): Unit = {
-    _boomMessage.set(message)
-    _boomVersion.incrementAndGet()
-  }
-
-  def boomVersion: Int    = _boomVersion.get()
-  def boomMessage: String = _boomMessage.get()
-
-  /** Décompté à 0 quand l'utilisateur clique Start */
-  val startLatch = new CountDownLatch(1)
 
   def update(data: TowerData): Unit = ref.set(Some(data))
   def snapshot: Option[TowerData]   = ref.get()
 
-  def triggerStart(): Unit = { _started.set(true); startLatch.countDown() }
-  def isStarted: Boolean   = _started.get()
-
   def markFinished(): Unit = _finished.set(true)
   def isFinished: Boolean  = _finished.get()
+
+  def addBoom(message: String): Unit = {
+    _boomMessage.set(message)
+    _boomVersion.incrementAndGet()
+  }
+  def boomVersion: Int    = _boomVersion.get()
+  def boomMessage: String = _boomMessage.get()
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SimState — état partagé entre les deux simulations et le
+// serveur HTTP.
+//
+// Partagé : startLatch, isStarted, injectedEvents, scheduleRef
+// Par simulation : SimSlot (libre / controle)
+// ═══════════════════════════════════════════════════════════════
+object SimState {
+
+  // ── Slots par simulation ──────────────────────────────────────
+  val libre    = new SimSlot("libre")
+  val controle = new SimSlot("controle")
+
+  // ── État partagé ─────────────────────────────────────────────
+  private val _started       = new AtomicReference[Boolean](false)
+  private val injectedEvents = new AtomicReference[List[InjectedEvent]](List.empty)
+  private val scheduleRef    = new AtomicReference[Map[String, List[AircraftFlight]]](Map.empty)
+
+  /** Décompté à 0 quand l'utilisateur clique Start */
+  val startLatch = new CountDownLatch(1)
+
+  def triggerStart(): Unit = { _started.set(true); startLatch.countDown() }
+  def isStarted: Boolean   = _started.get()
 
   def updateEventStatus(id: String, status: String): Unit = {
     val updated = injectedEvents.get().map { e =>

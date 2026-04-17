@@ -14,11 +14,12 @@ object DashboardServer {
 
   def start(): Unit = {
     val server = HttpServer.create(new InetSocketAddress(8080), 0)
-    server.createContext("/",          exchange => handle(exchange, routeRoot))
-    server.createContext("/start",     exchange => handle(exchange, routeStart))
-    server.createContext("/state",     exchange => handle(exchange, routeState))
-    server.createContext("/schedule",  exchange => handle(exchange, routeSchedule))
-    server.createContext("/add-event", exchange => handle(exchange, routeAddEvent))
+    server.createContext("/",                 exchange => handle(exchange, routeRoot))
+    server.createContext("/start",            exchange => handle(exchange, routeStart))
+    server.createContext("/schedule",         exchange => handle(exchange, routeSchedule))
+    server.createContext("/add-event",        exchange => handle(exchange, routeAddEvent))
+    server.createContext("/state/libre",      exchange => handle(exchange, routeStateLibre))
+    server.createContext("/state/controle",   exchange => handle(exchange, routeStateControle))
     server.setExecutor(null)
     server.start()
   }
@@ -75,9 +76,13 @@ object DashboardServer {
     (200, "application/json", """{"ok":true}""")
   }
 
-  // ── GET /state — polling live simulation ──────────────────────
-  private def routeState(ex: HttpExchange): (Int, String, String) =
-    (200, "application/json; charset=UTF-8", buildStateJson())
+  // ── GET /state/libre ─────────────────────────────────────────
+  private def routeStateLibre(ex: HttpExchange): (Int, String, String) =
+    (200, "application/json; charset=UTF-8", buildStateJson(SimState.libre))
+
+  // ── GET /state/controle ──────────────────────────────────────
+  private def routeStateControle(ex: HttpExchange): (Int, String, String) =
+    (200, "application/json; charset=UTF-8", buildStateJson(SimState.controle))
 
   // ── JSON builders ─────────────────────────────────────────────
 
@@ -97,7 +102,6 @@ object DashboardServer {
   private def eventToJson(e: InjectedEvent): String = {
     val tH = e.targetHour
     val tM = e.targetMinute
-    // trigger = target − 30 min
     val totalTrig = tH * 60 + tM - 30
     val trigH = ((totalTrig / 60) % 24 + 24) % 24
     val trigM = ((totalTrig % 60) + 60) % 60
@@ -107,11 +111,11 @@ object DashboardServer {
     s"""{"id":"${e.id}","type":"$typeName","typeLabel":"${esc(e.eventType.displayName)}","triggerTime":"$triggerTime","targetTime":"$targetTime","urgency":"${e.urgencyLevel.label}","note":"${esc(e.note)}","status":"${e.status}"}"""
   }
 
-  private def buildStateJson(): String = {
+  private def buildStateJson(slot: SimSlot): String = {
     val started  = SimState.isStarted
-    val finished = SimState.isFinished
+    val finished = slot.isFinished
 
-    SimState.snapshot match {
+    slot.snapshot match {
       case None =>
         s"""{"started":$started,"finished":$finished,"simTime":"--:--","stats":{"total":0,"active":0,"departed":0,"freeRunways":0,"freeGarages":0},"flights":[],"boomVersion":0,"boomMessage":""}"""
 
@@ -119,18 +123,23 @@ object DashboardServer {
         val simTimeStr    = data.simTime.format(HHmm)
         val activeCount   = data.airplanes.size
         val departedCount = data.flightStates.values.count(_ == "Parti")
-        val totalCount    = data.schedule.values.flatten.count(_.kind == Arrival)
+        val totalCount    = data.schedule.values.flatten.count(_.kind == Arrival) +
+                            data.cancelledFlights.count(_.kind == Arrival)
 
-        val flightsJson = data.schedule.values.flatten.toList
+        val cancelledFlightIds = data.cancelledFlights.map(_.flightId).toSet
+        val allFlights = (data.schedule.values.flatten.toList ++ data.cancelledFlights)
           .sortBy(_.scheduledTime)
-          .map { f =>
+
+        val flightsJson = allFlights.map { f =>
             val kind   = if (f.kind == Arrival) "ARR" else "DEP"
-            val status = data.flightStates.getOrElse(f.airplaneId, "Planifié")
-            s"""{"flightId":"${esc(f.flightId)}","airplaneId":"${esc(f.airplaneId)}","time":"${f.scheduledTime.format(HHmm)}","kind":"$kind","runway":"${esc(f.runway)}","destination":"${esc(f.destination)}","status":"$status"}"""
+            val status = if (cancelledFlightIds.contains(f.flightId)) "Annulé"
+                         else data.flightStates.getOrElse(f.airplaneId, "Planifié")
+            val delay  = data.delayInfo.getOrElse(f.flightId, 0)
+            s"""{"flightId":"${esc(f.flightId)}","airplaneId":"${esc(f.airplaneId)}","time":"${f.scheduledTime.format(HHmm)}","kind":"$kind","runway":"${esc(f.runway)}","destination":"${esc(f.destination)}","status":"$status","delay":$delay}"""
           }.mkString(",")
 
-        val boomV = SimState.boomVersion
-        val boomM = esc(SimState.boomMessage)
+        val boomV = slot.boomVersion
+        val boomM = esc(slot.boomMessage)
         s"""{"started":$started,"finished":$finished,"simTime":"$simTimeStr","stats":{"total":$totalCount,"active":$activeCount,"departed":$departedCount,"freeRunways":${data.freeRunways.size},"freeGarages":${data.freeGarages.size}},"flights":[$flightsJson],"boomVersion":$boomV,"boomMessage":"$boomM"}"""
     }
   }
@@ -172,7 +181,7 @@ object DashboardServer {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CySky — Simulation</title>
+<title>CySky — Simulation Duale</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',sans-serif;background:#0a0e17;color:#c8d8f0;min-height:100vh}
@@ -187,7 +196,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @keyframes boom-flash{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.05)}}
 
-/* ── Layout ── */
+/* ── Layout pré-sim ── */
 .page{max-width:1200px;margin:0 auto;padding:28px 40px}
 
 /* ── Section titles ── */
@@ -245,18 +254,44 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .btn-start:hover{background:#2d602d;box-shadow:0 0 20px rgba(0,230,118,.15)}
 .btn-start:disabled{background:#141c2e;border-color:#1e2d4a;color:#4a6080;cursor:default;box-shadow:none}
 
-/* ── Live dashboard ── */
+/* ── Dual simulation layout ── */
 #live-sim{display:none}
+.dual-sim{display:grid;grid-template-columns:1fr 1fr;min-height:calc(100vh - 80px)}
+.sim-panel{border-right:1px solid #1e2d4a;display:flex;flex-direction:column}
+.sim-panel:last-child{border-right:none}
+
+/* ── Panel headers ── */
+.panel-title{padding:12px 24px;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;border-bottom:1px solid #1e2d4a;display:flex;align-items:center;gap:8px}
+.panel-libre   .panel-title{color:#00e676;background:rgba(0,230,118,.04);border-top:2px solid rgba(0,230,118,.3)}
+.panel-controle .panel-title{color:#40c4ff;background:rgba(64,196,255,.04);border-top:2px solid rgba(64,196,255,.3)}
+.panel-mode-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.panel-libre .panel-mode-dot{background:#00e676}
+.panel-controle .panel-mode-dot{background:#40c4ff}
+
+/* ── Stats bar per panel ── */
 .stats-bar{display:flex;border-bottom:1px solid #1e2d4a;overflow-x:auto}
-.stat{flex:1;min-width:120px;padding:14px 24px;border-right:1px solid #1e2d4a;display:flex;flex-direction:column;gap:3px}
-.stat-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#4a6080;font-family:monospace}
-.stat-value{font-size:22px;font-weight:600;color:#f5a623}
+.stat{flex:1;min-width:80px;padding:10px 16px;border-right:1px solid #1e2d4a;display:flex;flex-direction:column;gap:2px}
+.stat:last-child{border-right:none}
+.stat-label{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#4a6080;font-family:monospace}
+.stat-value{font-size:18px;font-weight:600;color:#f5a623}
 .stat-value.green{color:#00e676}.stat-value.blue{color:#40c4ff}
-.live-table{width:100%;border-collapse:collapse;font-size:13px}
-.live-table th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#4a6080;padding:10px 14px;border-bottom:1px solid #1e2d4a;text-align:left;background:#0a0e17}
-.live-table td{padding:9px 14px;border-bottom:1px solid rgba(30,45,74,.4);vertical-align:middle}
+
+/* ── Live table per panel ── */
+.panel-body{padding:16px 20px;flex:1;overflow-y:auto}
+.panel-section-title{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#4a6080;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.panel-section-title::after{content:'';flex:1;height:1px;background:#1e2d4a}
+.panel-table-card{background:#0f1520;border:1px solid #1e2d4a;border-radius:4px;overflow:hidden}
+.live-table{width:100%;border-collapse:collapse;font-size:12px}
+.live-table th{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#4a6080;padding:8px 10px;border-bottom:1px solid #1e2d4a;text-align:left;background:#0a0e17}
+.live-table td{padding:7px 10px;border-bottom:1px solid rgba(30,45,74,.4);vertical-align:middle}
 .live-table tr:hover td{background:rgba(255,255,255,.015)}
-.st{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 7px;border-radius:3px;font-weight:600}
+
+/* ── Badge retard ── */
+.delay-badge{display:inline-flex;align-items:center;gap:3px;background:#2a1800;border:1px solid #7a4400;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;color:#ff9800;font-family:monospace;white-space:nowrap;vertical-align:middle}
+.delay-badge::before{content:'⏱';font-size:9px}
+
+/* ── Statuts ── */
+.st{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600}
 .st::before{content:'';width:5px;height:5px;border-radius:50%;flex-shrink:0}
 .st-scheduled{background:#141c2e;color:#4a6080}.st-scheduled::before{background:#4a6080}
 .st-inprogress{background:#1a3a5c;color:#40c4ff}.st-inprogress::before{background:#40c4ff;animation:pulse 1s ease-in-out infinite}
@@ -265,36 +300,31 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .st-boom{background:#5c0000;color:#ff1744;font-weight:900;animation:boom-flash 0.5s ease-in-out infinite}.st-boom::before{background:#ff1744}
 .st-cancelled{background:#2a1a00;color:#9e9e9e}.st-cancelled::before{background:#9e9e9e;opacity:.5}
 
-/* ── Popup BOOM ── */
-.boom-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9999;animation:fadeIn .2s ease}
-.boom-modal{background:#0d1220;border:2px solid #ff1744;border-radius:10px;padding:40px 48px;max-width:520px;width:90%;text-align:center;box-shadow:0 0 60px rgba(255,23,68,.4);animation:boomIn .3s cubic-bezier(.34,1.56,.64,1)}
-.boom-icon{font-size:64px;line-height:1;margin-bottom:16px;animation:boom-flash .5s ease-in-out infinite}
-.boom-title{font-size:26px;font-weight:800;color:#ff1744;letter-spacing:.08em;margin-bottom:10px}
-.boom-subtitle{font-size:13px;color:#9e9e9e;margin-bottom:8px;letter-spacing:.04em}
-.boom-detail{font-size:14px;color:#ff7043;font-family:monospace;background:#1a0a0a;border:1px solid #3a1010;border-radius:4px;padding:10px 16px;margin-top:14px;word-break:break-all}
-.boom-btn{margin-top:28px;background:#5c0000;border:1px solid #ff1744;border-radius:6px;padding:12px 36px;color:#ff1744;font-size:14px;font-weight:700;letter-spacing:.08em;cursor:pointer;transition:all .2s}
-.boom-btn:hover{background:#7a0000;box-shadow:0 0 20px rgba(255,23,68,.3)}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes boomIn{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+/* ── Séparateur central ── */
+.sim-divider{position:relative;display:flex;align-items:center;justify-content:center;width:1px;background:#1e2d4a}
+.sim-divider-label{position:absolute;top:50%;transform:translateY(-50%);background:#0d1220;border:1px solid #1e2d4a;border-radius:4px;padding:4px 8px;font-size:9px;letter-spacing:.1em;color:#4a6080;white-space:nowrap;writing-mode:vertical-rl;text-orientation:mixed}
+
+/* ── Toasts ── */
+.toast{position:fixed;top:24px;right:24px;width:310px;border-radius:6px;padding:12px 15px;display:flex;flex-direction:column;gap:3px;pointer-events:auto;animation:toastIn .18s ease;transition:opacity .35s ease}
+.toast-title{font-weight:700;font-size:12px;letter-spacing:.04em;display:flex;align-items:center;gap:5px}
+.toast-body{color:#b0b8c8;font-size:11px;line-height:1.4;font-family:monospace;word-break:break-all}
+.toast-side{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
+.toast-side.libre{color:#00e676}.toast-side.controle{color:#40c4ff}
+.toast-boom{background:#1e0005;border:1px solid #c62828;box-shadow:0 4px 24px rgba(255,23,68,.25)}
+.toast-boom .toast-title{color:#ff5252}
+.toast-delay{background:#1a1000;border:1px solid #5c3200;box-shadow:0 4px 16px rgba(255,152,0,.15)}
+.toast-delay .toast-title{color:#ff9800}
+.toast-cancelled{background:#111111;border:1px solid #333;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.toast-cancelled .toast-title{color:#757575}
+@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
 </style>
 </head>
 <body>
 
-<!-- ═══ POPUP BOOM ═══ -->
-<div id="boom-overlay" class="boom-overlay" style="display:none" onclick="closeBoom()">
-  <div class="boom-modal" onclick="event.stopPropagation()">
-    <div class="boom-icon">💥</div>
-    <div class="boom-title">ACCIDENT DÉTECTÉ</div>
-    <div class="boom-subtitle">Le réseau de Pétri a détecté un conflit critique</div>
-    <div class="boom-detail" id="boom-detail">—</div>
-    <button class="boom-btn" onclick="closeBoom()">Fermer l'alerte</button>
-  </div>
-</div>
-
 <header>
   <div>
     <div class="logo">&#9992; CySky AeroSim</div>
-    <div class="logo-sub">AIRPORT SIMULATION SYSTEM</div>
+    <div class="logo-sub">AIRPORT DUAL SIMULATION SYSTEM</div>
   </div>
   <div style="display:flex;align-items:center;gap:20px">
     <div class="live-badge"><span id="live-dot" class="live-dot off"></span><span id="live-label">En attente</span></div>
@@ -305,8 +335,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 <!-- ═══ PRÉ-SIMULATION ═══ -->
 <div id="pre-sim" class="page">
 
-  <!-- Formulaire d'injection d'événements -->
-  <div class="section-title">Injecter des événements</div>
+  <!-- Formulaire d'injection d'événements (commun aux deux simulations) -->
+  <div class="section-title">Injecter des événements — appliqués aux deux simulations</div>
   <div class="form-card">
     <div class="form-grid">
       <div class="field">
@@ -373,21 +403,52 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 
   <!-- Bouton lancer -->
   <div class="start-bar">
-    <button class="btn-start" id="btn-start" onclick="startSim()">&#9654; Lancer la simulation</button>
+    <button class="btn-start" id="btn-start" onclick="startSim()">&#9654; Lancer les deux simulations</button>
   </div>
 </div>
 
-<!-- ═══ SIMULATION LIVE ═══ -->
+<!-- ═══ SIMULATION LIVE — DUAL ═══ -->
 <div id="live-sim">
-  <div class="stats-bar" id="stats-bar"></div>
-  <div class="page" style="padding-top:20px">
-    <div class="section-title">Vols en cours</div>
-    <div class="table-card">
-      <table class="live-table">
-        <thead><tr><th>#</th><th>Heure</th><th>Type</th><th>Vol</th><th>Avion</th><th>Piste</th><th>Destination</th><th>État</th></tr></thead>
-        <tbody id="live-body"></tbody>
-      </table>
+  <div class="dual-sim">
+
+    <!-- ── Panneau gauche : Mode Libre ── -->
+    <div class="sim-panel panel-libre">
+      <div class="panel-title">
+        <span class="panel-mode-dot"></span>
+        Mode Libre
+        <span style="margin-left:auto;font-size:10px;color:#4a6080;font-weight:400;letter-spacing:.04em">Sans vérification Pétri</span>
+      </div>
+      <div class="stats-bar" id="stats-libre"></div>
+      <div class="panel-body">
+        <div class="panel-section-title">Vols en cours</div>
+        <div class="panel-table-card">
+          <table class="live-table">
+            <thead><tr><th>#</th><th>Heure</th><th>Type</th><th>Vol</th><th>Avion</th><th>Piste</th><th>Destination</th><th>État</th></tr></thead>
+            <tbody id="live-body-libre"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
+
+    <!-- ── Panneau droit : Mode Contrôle ── -->
+    <div class="sim-panel panel-controle">
+      <div class="panel-title">
+        <span class="panel-mode-dot"></span>
+        Mode Contrôle
+        <span style="margin-left:auto;font-size:10px;color:#4a6080;font-weight:400;letter-spacing:.04em">Vérification Pétri active</span>
+      </div>
+      <div class="stats-bar" id="stats-controle"></div>
+      <div class="panel-body">
+        <div class="panel-section-title">Vols en cours</div>
+        <div class="panel-table-card">
+          <table class="live-table">
+            <thead><tr><th>#</th><th>Heure</th><th>Type</th><th>Vol</th><th>Avion</th><th>Piste</th><th>Destination</th><th>État</th><th>Retard</th></tr></thead>
+            <tbody id="live-body-controle"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -416,18 +477,12 @@ function loadSchedule() {
 // ── Rendre la table fusionnée (vols + événements) ────────────────
 function renderSchedule() {
   var rows = [];
-
-  // Vols
   scheduleData.flights.forEach(function(f) {
     rows.push({time: f.time, sortKey: f.time, kind: 'flight', data: f});
   });
-
-  // Événements → insérés au triggerTime (cible − 30 min)
   scheduleData.events.forEach(function(e) {
     rows.push({time: e.triggerTime, sortKey: e.triggerTime, kind: 'event', data: e});
   });
-
-  // Tri par heure
   rows.sort(function(a, b){ return a.sortKey.localeCompare(b.sortKey); });
 
   var tbody = document.getElementById('schedule-body');
@@ -435,7 +490,6 @@ function renderSchedule() {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#4a6080;padding:20px">Aucun vol planifié</td></tr>';
     return;
   }
-
   tbody.innerHTML = rows.map(function(row) {
     if (row.kind === 'flight') {
       var f = row.data;
@@ -448,8 +502,7 @@ function renderSchedule() {
         '<td style="color:#7a9ab8">' + f.airplaneId + '</td>' +
         '<td><span class="badge badge-rwy">' + f.runway + '</span></td>' +
         '<td class="dest-cell">' + (f.kind === 'DEP' ? f.destination : '—') + '</td>' +
-        '<td></td>' +
-        '</tr>';
+        '<td></td></tr>';
     } else {
       var e = row.data;
       var col = EVT_COLORS[e.type] || '#ff9800';
@@ -521,18 +574,18 @@ function startSim() {
     document.getElementById('live-sim').style.display = 'block';
     document.getElementById('live-dot').className     = 'live-dot';
     document.getElementById('live-label').textContent = 'Simulation en cours';
-    pollState();
+    setTimeout(pollState, 300);
   });
 }
 
-// ── Polling live ─────────────────────────────────────────────────
+// ── Polling live (les deux simulations en parallèle) ─────────────
 var STATUS_STYLES = {
   'En approche':           {cls:'st-inprogress', lbl:'En approche'},
   'Atterrissage en cours': {cls:'st-inprogress', lbl:'Atterrissage'},
   'Taxi vers piste':       {cls:'st-boarding',   lbl:'Taxi'},
   'Décollage en cours':    {cls:'st-inprogress', lbl:'Décollage'},
   'Parti':                 {cls:'st-completed',  lbl:'Parti'},
-  '💥 BOOM':               {cls:'st-boom',       lbl:'💥 BOOM'},
+  'BOOM':                  {cls:'st-boom',       lbl:'💥 BOOM'},
   'Annulé':                {cls:'st-cancelled',  lbl:'Annulé'}
 };
 
@@ -544,58 +597,111 @@ function statusBadge(s) {
   return '<span class="st ' + st.cls + '">' + st.lbl + '</span>';
 }
 
+var lastBoomLibre    = 0;
+var lastBoomControle = 0;
+var seenDelays    = {};   // "side:flightId" -> true
+var seenCancelled = {};   // "side:flightId" -> true
+var toastZ        = 9000;
+
+function showToast(type, title, body, side) {
+  var t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.style.zIndex = ++toastZ;
+  t.innerHTML =
+    '<div class="toast-title">' + title + '</div>' +
+    '<div class="toast-body">' + body + '</div>' +
+    '<div class="toast-side ' + side + '">' + (side === 'libre' ? 'Mode Libre' : 'Mode Contrôle') + '</div>';
+  document.body.appendChild(t);
+  setTimeout(function() {
+    t.style.opacity = '0';
+    setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 380);
+  }, 5000);
+}
+
+function delayBadge(delay) {
+  if (!delay || delay <= 0) return '';
+  return '<span class="delay-badge">+' + delay + ' min</span>';
+}
+
+function updatePanel(side, s) {
+  var statsId    = 'stats-' + side;
+  var bodyId     = 'live-body-' + side;
+  var showDelay  = (side === 'controle');
+
+  document.getElementById(statsId).innerHTML =
+    stat('Vols', s.stats.total, '') +
+    stat('En cours', s.stats.active, 'blue') +
+    stat('Partis', s.stats.departed, 'green') +
+    stat('Pistes', s.stats.freeRunways, '') +
+    stat('Gates', s.stats.freeGarages, '');
+
+  var rows = s.flights.map(function(f, i) {
+    var badgeCls = f.kind === 'ARR' ? 'badge-arr' : 'badge-dep';
+    var delayCell = showDelay ? '<td>' + delayBadge(f.delay) + '</td>' : '';
+    return '<tr><td>' + (i+1) + '</td>' +
+      '<td class="time-cell">' + f.time + '</td>' +
+      '<td><span class="badge ' + badgeCls + '">' + f.kind + '</span></td>' +
+      '<td class="flight-id">' + f.flightId + '</td>' +
+      '<td style="color:#7a9ab8">' + f.airplaneId + '</td>' +
+      '<td><span class="badge badge-rwy">' + f.runway + '</span></td>' +
+      '<td class="dest-cell">' + f.destination + '</td>' +
+      '<td>' + statusBadge(f.status) + '</td>' +
+      delayCell + '</tr>';
+  });
+  document.getElementById(bodyId).innerHTML = rows.join('');
+
+  // Toasts retard
+  s.flights.forEach(function(f) {
+    var dk = side + ':' + f.flightId + ':delay';
+    var ck = side + ':' + f.flightId + ':cancel';
+    if (f.delay > 0 && !seenDelays[dk]) {
+      seenDelays[dk] = true;
+      showToast('delay', '⏱ Vol retardé', f.flightId + '  +' + f.delay + ' min', side);
+    }
+    if (f.status === 'Annulé' && !seenCancelled[ck]) {
+      seenCancelled[ck] = true;
+      showToast('cancelled', 'Vol annulé', f.flightId + ' — ' + f.destination, side);
+    }
+  });
+
+  // Toast BOOM
+  if (side === 'libre' && s.boomVersion > lastBoomLibre) {
+    lastBoomLibre = s.boomVersion;
+    showToast('boom', '💥 Collision détectée', s.boomMessage, 'libre');
+  }
+  if (side === 'controle' && s.boomVersion > lastBoomControle) {
+    lastBoomControle = s.boomVersion;
+    showToast('boom', '💥 Collision détectée', s.boomMessage, 'controle');
+  }
+}
+
 function pollState() {
-  fetch('/state').then(function(r){ return r.json(); }).then(function(s){
-    document.getElementById('sim-clock').textContent = s.simTime;
+  Promise.all([
+    fetch('/state/libre').then(function(r){ return r.json(); }),
+    fetch('/state/controle').then(function(r){ return r.json(); })
+  ]).then(function(results) {
+    var libre    = results[0];
+    var controle = results[1];
 
-    // Détecter un nouvel événement BOOM
-    if (s.boomVersion && s.boomVersion > lastBoomVersion) {
-      lastBoomVersion = s.boomVersion;
-      showBoom(s.boomMessage);
+    // Horloge = la plus avancée des deux (ou libre par défaut)
+    var clk = libre.simTime !== '--:--' ? libre.simTime : controle.simTime;
+    document.getElementById('sim-clock').textContent = clk;
+
+    updatePanel('libre',    libre);
+    updatePanel('controle', controle);
+
+    var bothDone = libre.finished && controle.finished;
+    if (bothDone) {
+      document.getElementById('live-dot').className     = 'live-dot off';
+      document.getElementById('live-label').textContent = 'Simulations terminées';
+    } else {
+      setTimeout(pollState, 1000);
     }
-
-    document.getElementById('stats-bar').innerHTML =
-      stat('Vols', s.stats.total, '') +
-      stat('En cours', s.stats.active, 'blue') +
-      stat('Partis', s.stats.departed, 'green') +
-      stat('Pistes libres', s.stats.freeRunways, '') +
-      stat('Gates libres', s.stats.freeGarages, '');
-
-    var rows = s.flights.map(function(f, i) {
-      var badgeCls = f.kind === 'ARR' ? 'badge-arr' : 'badge-dep';
-      return '<tr><td>' + (i+1) + '</td>' +
-        '<td class="time-cell">' + f.time + '</td>' +
-        '<td><span class="badge ' + badgeCls + '">' + f.kind + '</span></td>' +
-        '<td class="flight-id">' + f.flightId + '</td>' +
-        '<td style="color:#7a9ab8">' + f.airplaneId + '</td>' +
-        '<td><span class="badge badge-rwy">' + f.runway + '</span></td>' +
-        '<td class="dest-cell">' + f.destination + '</td>' +
-        '<td>' + statusBadge(f.status) + '</td></tr>';
-    });
-    document.getElementById('live-body').innerHTML = rows.join('');
-
-    if (!s.finished) setTimeout(pollState, 1000);
-    else {
-      document.getElementById('live-dot').className = 'live-dot off';
-      document.getElementById('live-label').textContent = 'Simulation terminée';
-    }
-  }).catch(function(){ setTimeout(pollState, 2000); });
+  }).catch(function(){ setTimeout(pollState, 1000); });
 }
 
 function stat(label, val, cls) {
   return '<div class="stat"><div class="stat-label">' + label + '</div><div class="stat-value ' + cls + '">' + val + '</div></div>';
-}
-
-// ── Gestion popup BOOM ──────────────────────────────────────────
-var lastBoomVersion = 0;
-
-function showBoom(message) {
-  document.getElementById('boom-detail').textContent = message;
-  document.getElementById('boom-overlay').style.display = 'flex';
-}
-
-function closeBoom() {
-  document.getElementById('boom-overlay').style.display = 'none';
 }
 
 // ── Init ────────────────────────────────────────────────────────

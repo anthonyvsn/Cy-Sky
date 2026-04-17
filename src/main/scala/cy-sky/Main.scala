@@ -1,9 +1,8 @@
 package cysky
 
-import akka.Done
 import akka.actor.typed.{ActorSystem, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
-import cysky.actors.{TowerControlActor, ClockActor}
+import cysky.actors.{TowerControlActor, ClockActor, ScheduleManagerActor}
 import cysky.models.ScheduleGeneratorAlgorithm
 import cysky.petri.PetriScheduleVerifier
 import java.time.{LocalDate, LocalTime}
@@ -11,23 +10,16 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 
 // ═══════════════════════════════════════════════════════════════
-// Main — simulation d'une journée aéroport CySky
+// Main — simulation d'une journée aéroport CySky (mode dual)
+//
+// Deux simulations tournent en parallèle avec le même planning :
+//   - gauche  : Mode Libre    (ScheduleManager sans vérif Pétri)
+//   - droite  : Mode Contrôle (ScheduleManager avec vérif Pétri)
 //
 // Calibrage temporel :
 //   tickInterval = 112 ms  (temps réel entre deux ticks)
 //   simStep      = 1 min   (temps simulé avancé par tick)
-//   → journée 06:00 → 23:59 (1 079 ticks)
-//     ≈ 1 079 × 112 ms ≈ 121 secondes ≈ 2 minutes réelles
-//
-// Démarrage :
-//   1. DashboardServer démarre sur :8080
-//   2. Main bloque sur startLatch jusqu'au clic Start dans le navigateur
-//   3. Le système d'acteurs est lancé
-//
-// Terminaison :
-//   Le ClockActor s'arrête quand simTime ≥ endTime.
-//   Le guardian observe le clock via watchWith(Done)
-//   et appelle ctx.system.terminate() — arrêt propre garanti.
+//   → journée 06:00 → 23:59 (1 079 ticks) ≈ 2 minutes réelles
 // ═══════════════════════════════════════════════════════════════
 object Main extends App {
 
@@ -43,7 +35,7 @@ object Main extends App {
   val TICK_INTERVAL: FiniteDuration     = 112.millis
   val SIM_STEP:      java.time.Duration = java.time.Duration.ofMinutes(1)
 
-  // ── Génération du planning ────────────────────────────────────
+  // ── Génération du planning (partagé entre les deux sims) ─────
   val schedule = ScheduleGeneratorAlgorithm.generate(
     terminalId   = "T1",
     runwayCount  = RUNWAY_COUNT,
@@ -77,51 +69,87 @@ object Main extends App {
 
   // ── Attente du clic Start ─────────────────────────────────────
   SimState.startLatch.await()
-  println("Simulation démarrée !")
+  println("Simulations démarrées !")
   println("─" * 60)
 
-  // ── Guardian ─────────────────────────────────────────────────
-  val rootBehavior: Behavior[Done] = Behaviors.setup[Done] { ctx =>
+  // ── Messages du guardian ──────────────────────────────────────
+  sealed trait GuardianMsg
+  final case class ClockDone(side: String) extends GuardianMsg
 
-    // 1. Tour de contrôle (spawne pistes et garages en interne)
-    val towerRef = ctx.spawn(
+  // ── Guardian ─────────────────────────────────────────────────
+  val rootBehavior: Behavior[GuardianMsg] = Behaviors.setup { ctx =>
+
+    val simStart = SIM_DATE.atTime(SIM_START)
+    val simEnd   = SIM_DATE.atTime(SIM_END)
+
+    // 1. Tour Libre (gauche) — ScheduleManager sans vérification Pétri
+    val towerLibre = ctx.spawn(
       TowerControlActor(
         runwayCount = RUNWAY_COUNT,
         garageCount = GARAGE_COUNT,
         schedule    = schedule,
-        simDate     = SIM_DATE
+        simDate     = SIM_DATE,
+        slot        = SimState.libre,
+        mode        = ScheduleManagerActor.Libre
       ),
-      "tower-control"
+      "tower-libre"
     )
-
-    // 2. Horloge simulée
-    val simStart = SIM_DATE.atTime(SIM_START)
-    val simEnd   = SIM_DATE.atTime(SIM_END)
-    val clockRef = ctx.spawn(
+    val clockLibre = ctx.spawn(
       ClockActor(
-        towerRef     = towerRef,
+        towerRef     = towerLibre,
         startTime    = simStart,
         tickInterval = TICK_INTERVAL,
         simStep      = SIM_STEP,
         endTime      = simEnd
       ),
-      "clock"
+      "clock-libre"
     )
 
-    // 3. Observer le clock : quand il s'arrête → Done → terminate
-    ctx.watchWith(clockRef, Done)
+    // 2. Tour Contrôle (droite) — ScheduleManager avec vérification Pétri
+    val towerControle = ctx.spawn(
+      TowerControlActor(
+        runwayCount = RUNWAY_COUNT,
+        garageCount = GARAGE_COUNT,
+        schedule    = schedule,
+        simDate     = SIM_DATE,
+        slot        = SimState.controle,
+        mode        = ScheduleManagerActor.Controle
+      ),
+      "tower-controle"
+    )
+    val clockControle = ctx.spawn(
+      ClockActor(
+        towerRef     = towerControle,
+        startTime    = simStart,
+        tickInterval = TICK_INTERVAL,
+        simStep      = SIM_STEP,
+        endTime      = simEnd
+      ),
+      "clock-controle"
+    )
 
-    Behaviors.receiveMessage { _ =>
-      println("─" * 60)
-      println("Simulation terminée — arrêt du système")
-      SimState.markFinished()
-      ctx.system.terminate()
-      Behaviors.stopped
-    }
+    // Observer les deux horloges — chacune envoie un GuardianMsg distinct
+    ctx.watchWith(clockLibre,    ClockDone("libre"))
+    ctx.watchWith(clockControle, ClockDone("controle"))
+
+    def awaitDone(remaining: Int): Behavior[GuardianMsg] =
+      Behaviors.receiveMessage { case ClockDone(side) =>
+        println(s"Simulation $side terminée.")
+        if (side == "libre")    SimState.libre.markFinished()
+        else                    SimState.controle.markFinished()
+        if (remaining - 1 <= 0) {
+          println("─" * 60)
+          println("Toutes les simulations terminées — arrêt du système")
+          ctx.system.terminate()
+          Behaviors.stopped
+        } else awaitDone(remaining - 1)
+      }
+
+    awaitDone(2)
   }
 
   // ── Démarrage et attente de fin propre ────────────────────────
-  val system = ActorSystem[Done](rootBehavior, "cysky-aerosim")
+  val system = ActorSystem[GuardianMsg](rootBehavior, "cysky-aerosim")
 
   Await.result(system.whenTerminated, 10.minutes)
 }

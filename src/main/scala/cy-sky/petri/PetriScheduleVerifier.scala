@@ -72,64 +72,65 @@ object PetriScheduleVerifier {
     val events = buildEvents(pairs).sortBy(_.atMin)
 
     // Marquage initial : chaque piste libre + gates dispo
-    val runwayIds = (1 to runwayCount).map(i => s"RWY_$i").toList
-    var marking: Map[String, Int] =
-      runwayIds.map(_ -> 1).toMap + ("gates" -> garageCount)
+    val runwayIds     = (1 to runwayCount).map(i => s"RWY_$i").toList
+    val initMarking   = runwayIds.map(_ -> 1).toMap + ("gates" -> garageCount)
 
-    var issues = List.empty[Issue]
+    // Simulation du marquage par fold — (marking, issues) progressent ensemble
+    val (finalMarking, rawIssues) = events.foldLeft((initMarking, List.empty[Issue])) {
+      case ((m, acc), e) =>
 
-    for (e <- events) {
-      e.kind match {
+        // 1. Transition → (nouveau marquage, éventuel problème)
+        val (m1, newIssue): (Map[String, Int], Option[Issue]) = e.kind match {
 
-        // 1. Atterrissage commence → consomme 1 jeton piste
-        case "LAND_START" =>
-          val rwy = e.runway
-          if (marking.getOrElse(rwy, 0) < 1)
-            issues = RunwayConflict(e.atMin, rwy, e.flightId, "LAND") :: issues
-          else
-            marking = marking.updated(rwy, marking(rwy) - 1)
+          // Atterrissage commence → consomme 1 jeton piste
+          case "LAND_START" =>
+            if (m.getOrElse(e.runway, 0) < 1)
+              (m, Some(RunwayConflict(e.atMin, e.runway, e.flightId, "LAND")))
+            else
+              (m.updated(e.runway, m(e.runway) - 1), None)
 
-        // 2. Atterrissage terminé → rend piste, consomme 1 gate
-        case "LAND_END" =>
-          val rwy   = e.runway
-          val gates = marking.getOrElse("gates", 0)
-          marking = marking.updated(rwy, marking.getOrElse(rwy, 0) + 1)
-          if (gates < 1)
-            issues = GateOverflow(e.atMin, garageCount - gates + 1, garageCount, e.flightId) :: issues
-          else
-            marking = marking.updated("gates", gates - 1)
+          // Atterrissage terminé → rend piste, consomme 1 gate
+          case "LAND_END" =>
+            val gates = m.getOrElse("gates", 0)
+            val m0    = m.updated(e.runway, m.getOrElse(e.runway, 0) + 1)
+            if (gates < 1)
+              (m0, Some(GateOverflow(e.atMin, garageCount - gates + 1, garageCount, e.flightId)))
+            else
+              (m0.updated("gates", gates - 1), None)
 
-        // 3. Taxi vers piste → rend 1 gate, consomme 1 jeton piste départ
-        case "TAXI_OUT" =>
-          val rwy = e.runway
-          marking = marking.updated("gates", marking.getOrElse("gates", 0) + 1)
-          if (marking.getOrElse(rwy, 0) < 1)
-            issues = RunwayConflict(e.atMin, rwy, e.flightId, "TAXI") :: issues
-          else
-            marking = marking.updated(rwy, marking(rwy) - 1)
+          // Taxi vers piste → rend 1 gate, consomme 1 jeton piste départ
+          case "TAXI_OUT" =>
+            val m0 = m.updated("gates", m.getOrElse("gates", 0) + 1)
+            if (m0.getOrElse(e.runway, 0) < 1)
+              (m0, Some(RunwayConflict(e.atMin, e.runway, e.flightId, "TAXI")))
+            else
+              (m0.updated(e.runway, m0(e.runway) - 1), None)
 
-        // 4. Décollage terminé → rend 1 jeton piste
-        case "TAKEOFF_END" =>
-          val rwy = e.runway
-          marking = marking.updated(rwy, marking.getOrElse(rwy, 0) + 1)
+          // Décollage terminé → rend 1 jeton piste
+          case "TAKEOFF_END" =>
+            (m.updated(e.runway, m.getOrElse(e.runway, 0) + 1), None)
 
-        case _ =>
-      }
+          case _ => (m, None)
+        }
 
-      // Vérification invariant : aucun marquage négatif
-      marking.foreach { case (place, tokens) =>
-        if (tokens < 0)
-          issues = Deadlock(e.atMin, s"Marquage négatif sur '$place' ($tokens) après ${e.kind} de ${e.flightId}") :: issues
-      }
+        // 2. Invariant : aucun marquage négatif (deadlock)
+        val deadlocks: List[Issue] = m1.collect {
+          case (place, tokens) if tokens < 0 =>
+            Deadlock(e.atMin, s"Marquage négatif sur '$place' ($tokens) après ${e.kind} de ${e.flightId}"): Issue
+        }.toList
+
+        (m1, acc ++ newIssue.toList ++ deadlocks)
     }
 
     // Vérification finale : toutes les ressources doivent être revenues
-    val finalRunwaysOk = runwayIds.forall(r => marking.getOrElse(r, 0) == 1)
-    val finalGatesOk   = marking.getOrElse("gates", 0) == garageCount
-    if (!finalRunwaysOk || !finalGatesOk)
-      issues = Deadlock(24 * 60, s"Ressources non libérées en fin de journée : $marking") :: issues
+    val finalRunwaysOk = runwayIds.forall(r => finalMarking.getOrElse(r, 0) == 1)
+    val finalGatesOk   = finalMarking.getOrElse("gates", 0) == garageCount
+    val endIssues =
+      if (!finalRunwaysOk || !finalGatesOk)
+        rawIssues :+ Deadlock(24 * 60, s"Ressources non libérées en fin de journée : $finalMarking")
+      else rawIssues
 
-    VerificationResult(issues.isEmpty, issues.reverse, net)
+    VerificationResult(endIssues.isEmpty, endIssues, net)
   }
 
   // ─── Construction du réseau de Pétri ──────────────────────────

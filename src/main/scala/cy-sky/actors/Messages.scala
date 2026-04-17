@@ -97,20 +97,31 @@ object ControlTowerCommand {
   final case class FlightAddedByManager(newSchedule: Map[String, List[AircraftFlight]])
     extends ControlTowerCommand
 
+  /** Vol(s) annulé(s) par le ScheduleManager (Mode Contrôle, impossible à placer).
+   *  cancelled    : vols à afficher avec le statut "Annulé" (ne sont PAS dans newSchedule).
+   *  newSchedule  : schedule mis à jour (contient l'arrivée si seul le départ est annulé). */
+  final case class FlightCancelledByManager(
+    cancelled:   List[AircraftFlight],
+    newSchedule: Map[String, List[AircraftFlight]]
+  ) extends ControlTowerCommand
+
   // ── Commandes BOOM — déclenchées par le réseau de Pétri ────────
 
   /** Conflit piste (atterrissage) : BOOM pour les avions concernés
-   *  + annulation de tous les vols sur cette piste. */
-  final case class BoomRunway(runway: String, boomPlanes: List[String])
+   *  + annulation de tous les vols sur cette piste.
+   *  smFlights = vols du SM plane rejeté (à ajouter au schedule pour l'affichage). */
+  final case class BoomRunway(runway: String, boomPlanes: List[String], smFlights: List[AircraftFlight] = Nil)
     extends ControlTowerCommand
 
   /** Conflit taxi (départ) : BOOM pour les avions concernés
-   *  + annulation de tous les avions utilisant cette voie de taxi. */
-  final case class BoomTaxi(runway: String, boomPlanes: List[String])
+   *  + annulation de tous les avions utilisant cette voie de taxi.
+   *  smFlights = vols du SM plane rejeté. */
+  final case class BoomTaxi(runway: String, boomPlanes: List[String], smFlights: List[AircraftFlight] = Nil)
     extends ControlTowerCommand
 
-  /** Débordement garage : annulation de TOUS les avions de l'aéroport. */
-  final case class BoomGarage(boomPlanes: List[String])
+  /** Débordement garage : annulation de TOUS les avions de l'aéroport.
+   *  smFlights = vols du SM plane rejeté. */
+  final case class BoomGarage(boomPlanes: List[String], smFlights: List[AircraftFlight] = Nil)
     extends ControlTowerCommand
 
   /** Retarder un vol spécifique */
