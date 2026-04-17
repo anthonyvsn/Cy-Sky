@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>AeroSim — {{TERMINAL_ID}}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    header { margin-bottom: 2rem; }
+    header h1 { font-size: 1.8rem; color: #60a5fa; letter-spacing: 0.05em; }
+    header p  { color: #94a3b8; margin-top: 0.3rem; font-size: 0.9rem; }
+
+    .stats {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: #1e2430;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+    }
+    .stat-card .label {
+      font-size: 0.75rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .stat-card .value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #60a5fa;
+      margin-top: 0.2rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .tab-btn {
+      background: #1e2430;
+      border: 1px solid #2d3748;
+      color: #94a3b8;
+      padding: 0.5rem 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover,
+    .tab-btn.active {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #fff;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #1e2430;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    thead tr { background: #16213e; }
+
+    th {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      border-top: 1px solid #2d3748;
+    }
+
+    tr:hover td { background: #243044; }
+
+    .badge {
+      background: #1d4ed8;
+      color: #bfdbfe;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .dest {
+      background: #064e3b;
+      color: #6ee7b7;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>&#9992; AeroSim — Terminal {{TERMINAL_ID}}</h1>
+    <p>Emploi du temps généré — {{RUNWAY_COUNT}} pistes actives</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Total vols</div>
+      <div class="value">{{TOTAL_FLIGHTS}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Pistes actives</div>
+      <div class="value">{{RUNWAY_COUNT}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Vols / piste (moy.)</div>
+      <div class="value">{{AVG_FLIGHTS}}</div>
+    </div>
+  </div>
+
+  <div class="tabs">{{TABS}}</div>
+
+  {{PANELS}}
+
+  <script>
+    function showTab(id, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('panel-' + id).classList.add('active');
+      btn.classList.add('active');
+    }
+    document.querySelector('.tab-btn').click();
+  </script>
+</body>
+</html>

@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>AeroSim — T1</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    header { margin-bottom: 2rem; }
+    header h1 { font-size: 1.8rem; color: #60a5fa; letter-spacing: 0.05em; }
+    header p  { color: #94a3b8; margin-top: 0.3rem; font-size: 0.9rem; }
+
+    .stats {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: #1e2430;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+    }
+    .stat-card .label {
+      font-size: 0.75rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .stat-card .value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #60a5fa;
+      margin-top: 0.2rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .tab-btn {
+      background: #1e2430;
+      border: 1px solid #2d3748;
+      color: #94a3b8;
+      padding: 0.5rem 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover,
+    .tab-btn.active {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #fff;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #1e2430;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    thead tr { background: #16213e; }
+
+    th {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      border-top: 1px solid #2d3748;
+    }
+
+    tr:hover td { background: #243044; }
+
+    .badge {
+      background: #1d4ed8;
+      color: #bfdbfe;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .dest {
+      background: #064e3b;
+      color: #6ee7b7;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>&#9992; AeroSim — Terminal T1</h1>
+    <p>Emploi du temps généré — 2 pistes actives</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Total vols</div>
+      <div class="value">20</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Pistes actives</div>
+      <div class="value">2</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Vols / piste (moy.)</div>
+      <div class="value">10</div>
+    </div>
+  </div>
+
+  <div class="tabs"><button class="tab-btn" onclick="showTab('ALL', this)">Tous les vols</button>
+<button class="tab-btn" onclick="showTab('RWY_1', this)">RWY_1</button>
+<button class="tab-btn" onclick="showTab('RWY_2', this)">RWY_2</button></div>
+
+  <div class="tab-panel" id="panel-ALL"><table>
+          <thead>
+            <tr>
+              <th>#</th><th>Vol</th><th>Avion</th><th>Type</th>
+              <th>Heure</th><th>Piste</th><th>Destination</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+          <td>1</td>
+          <td><span class="badge">T1_RWY_1_ARR1</span></td>
+          <td>PLANE_RWY_1_1</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>06:00</td>
+          <td>RWY_1</td>
+          <td><span class="dest">AMS</span></td>
+        </tr><tr>
+          <td>2</td>
+          <td><span class="badge">T1_RWY_2_ARR1</span></td>
+          <td>PLANE_RWY_2_1</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>06:02</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr><tr>
+          <td>3</td>
+          <td><span class="badge">T1_RWY_1_DEP1</span></td>
+          <td>PLANE_RWY_1_1</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>08:01</td>
+          <td>RWY_1</td>
+          <td><span class="dest">AMS</span></td>
+        </tr><tr>
+          <td>4</td>
+          <td><span class="badge">T1_RWY_2_DEP1</span></td>
+          <td>PLANE_RWY_2_1</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>08:03</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr><tr>
+          <td>5</td>
+          <td><span class="badge">T1_RWY_2_ARR2</span></td>
+          <td>PLANE_RWY_2_2</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>08:10</td>
+          <td>RWY_2</td>
+          <td><span class="dest">FCO</span></td>
+        </tr><tr>
+          <td>6</td>
+          <td><span class="badge">T1_RWY_1_ARR2</span></td>
+          <td>PLANE_RWY_1_2</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>08:14</td>
+          <td>RWY_1</td>
+          <td><span class="dest">BCN</span></td>
+        </tr><tr>
+          <td>7</td>
+          <td><span class="badge">T1_RWY_2_DEP2</span></td>
+          <td>PLANE_RWY_2_2</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>10:11</td>
+          <td>RWY_2</td>
+          <td><span class="dest">FCO</span></td>
+        </tr><tr>
+          <td>8</td>
+          <td><span class="badge">T1_RWY_1_DEP2</span></td>
+          <td>PLANE_RWY_1_2</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>10:15</td>
+          <td>RWY_1</td>
+          <td><span class="dest">BCN</span></td>
+        </tr><tr>
+          <td>9</td>
+          <td><span class="badge">T1_RWY_2_ARR3</span></td>
+          <td>PLANE_RWY_2_3</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>10:16</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MUC</span></td>
+        </tr><tr>
+          <td>10</td>
+          <td><span class="badge">T1_RWY_1_ARR3</span></td>
+          <td>PLANE_RWY_1_3</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>10:20</td>
+          <td>RWY_1</td>
+          <td><span class="dest">NRT</span></td>
+        </tr><tr>
+          <td>11</td>
+          <td><span class="badge">T1_RWY_2_DEP3</span></td>
+          <td>PLANE_RWY_2_3</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>12:17</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MUC</span></td>
+        </tr><tr>
+          <td>12</td>
+          <td><span class="badge">T1_RWY_1_DEP3</span></td>
+          <td>PLANE_RWY_1_3</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>12:21</td>
+          <td>RWY_1</td>
+          <td><span class="dest">NRT</span></td>
+        </tr><tr>
+          <td>13</td>
+          <td><span class="badge">T1_RWY_1_ARR4</span></td>
+          <td>PLANE_RWY_1_4</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>12:31</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr><tr>
+          <td>14</td>
+          <td><span class="badge">T1_RWY_2_ARR4</span></td>
+          <td>PLANE_RWY_2_4</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>12:31</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MAD</span></td>
+        </tr><tr>
+          <td>15</td>
+          <td><span class="badge">T1_RWY_1_DEP4</span></td>
+          <td>PLANE_RWY_1_4</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>14:32</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr><tr>
+          <td>16</td>
+          <td><span class="badge">T1_RWY_2_DEP4</span></td>
+          <td>PLANE_RWY_2_4</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>14:32</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MAD</span></td>
+        </tr><tr>
+          <td>17</td>
+          <td><span class="badge">T1_RWY_2_ARR5</span></td>
+          <td>PLANE_RWY_2_5</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>14:40</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr><tr>
+          <td>18</td>
+          <td><span class="badge">T1_RWY_1_ARR5</span></td>
+          <td>PLANE_RWY_1_5</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>14:46</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr><tr>
+          <td>19</td>
+          <td><span class="badge">T1_RWY_2_DEP5</span></td>
+          <td>PLANE_RWY_2_5</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>16:41</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr><tr>
+          <td>20</td>
+          <td><span class="badge">T1_RWY_1_DEP5</span></td>
+          <td>PLANE_RWY_1_5</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>16:47</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr></tbody>
+        </table></div><div class="tab-panel" id="panel-RWY_1"><table>
+          <thead>
+            <tr>
+              <th>#</th><th>Vol</th><th>Avion</th><th>Type</th>
+              <th>Heure</th><th>Piste</th><th>Destination</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+          <td>1</td>
+          <td><span class="badge">T1_RWY_1_ARR1</span></td>
+          <td>PLANE_RWY_1_1</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>06:00</td>
+          <td>RWY_1</td>
+          <td><span class="dest">AMS</span></td>
+        </tr><tr>
+          <td>2</td>
+          <td><span class="badge">T1_RWY_1_DEP1</span></td>
+          <td>PLANE_RWY_1_1</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>08:01</td>
+          <td>RWY_1</td>
+          <td><span class="dest">AMS</span></td>
+        </tr><tr>
+          <td>3</td>
+          <td><span class="badge">T1_RWY_1_ARR2</span></td>
+          <td>PLANE_RWY_1_2</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>08:14</td>
+          <td>RWY_1</td>
+          <td><span class="dest">BCN</span></td>
+        </tr><tr>
+          <td>4</td>
+          <td><span class="badge">T1_RWY_1_DEP2</span></td>
+          <td>PLANE_RWY_1_2</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>10:15</td>
+          <td>RWY_1</td>
+          <td><span class="dest">BCN</span></td>
+        </tr><tr>
+          <td>5</td>
+          <td><span class="badge">T1_RWY_1_ARR3</span></td>
+          <td>PLANE_RWY_1_3</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>10:20</td>
+          <td>RWY_1</td>
+          <td><span class="dest">NRT</span></td>
+        </tr><tr>
+          <td>6</td>
+          <td><span class="badge">T1_RWY_1_DEP3</span></td>
+          <td>PLANE_RWY_1_3</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>12:21</td>
+          <td>RWY_1</td>
+          <td><span class="dest">NRT</span></td>
+        </tr><tr>
+          <td>7</td>
+          <td><span class="badge">T1_RWY_1_ARR4</span></td>
+          <td>PLANE_RWY_1_4</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>12:31</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr><tr>
+          <td>8</td>
+          <td><span class="badge">T1_RWY_1_DEP4</span></td>
+          <td>PLANE_RWY_1_4</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>14:32</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr><tr>
+          <td>9</td>
+          <td><span class="badge">T1_RWY_1_ARR5</span></td>
+          <td>PLANE_RWY_1_5</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>14:46</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr><tr>
+          <td>10</td>
+          <td><span class="badge">T1_RWY_1_DEP5</span></td>
+          <td>PLANE_RWY_1_5</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>16:47</td>
+          <td>RWY_1</td>
+          <td><span class="dest">DXB</span></td>
+        </tr></tbody>
+        </table></div><div class="tab-panel" id="panel-RWY_2"><table>
+          <thead>
+            <tr>
+              <th>#</th><th>Vol</th><th>Avion</th><th>Type</th>
+              <th>Heure</th><th>Piste</th><th>Destination</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+          <td>1</td>
+          <td><span class="badge">T1_RWY_2_ARR1</span></td>
+          <td>PLANE_RWY_2_1</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>06:02</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr><tr>
+          <td>2</td>
+          <td><span class="badge">T1_RWY_2_DEP1</span></td>
+          <td>PLANE_RWY_2_1</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>08:03</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr><tr>
+          <td>3</td>
+          <td><span class="badge">T1_RWY_2_ARR2</span></td>
+          <td>PLANE_RWY_2_2</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>08:10</td>
+          <td>RWY_2</td>
+          <td><span class="dest">FCO</span></td>
+        </tr><tr>
+          <td>4</td>
+          <td><span class="badge">T1_RWY_2_DEP2</span></td>
+          <td>PLANE_RWY_2_2</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>10:11</td>
+          <td>RWY_2</td>
+          <td><span class="dest">FCO</span></td>
+        </tr><tr>
+          <td>5</td>
+          <td><span class="badge">T1_RWY_2_ARR3</span></td>
+          <td>PLANE_RWY_2_3</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>10:16</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MUC</span></td>
+        </tr><tr>
+          <td>6</td>
+          <td><span class="badge">T1_RWY_2_DEP3</span></td>
+          <td>PLANE_RWY_2_3</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>12:17</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MUC</span></td>
+        </tr><tr>
+          <td>7</td>
+          <td><span class="badge">T1_RWY_2_ARR4</span></td>
+          <td>PLANE_RWY_2_4</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>12:31</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MAD</span></td>
+        </tr><tr>
+          <td>8</td>
+          <td><span class="badge">T1_RWY_2_DEP4</span></td>
+          <td>PLANE_RWY_2_4</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>14:32</td>
+          <td>RWY_2</td>
+          <td><span class="dest">MAD</span></td>
+        </tr><tr>
+          <td>9</td>
+          <td><span class="badge">T1_RWY_2_ARR5</span></td>
+          <td>PLANE_RWY_2_5</td>
+          <td><span class="tag arrival">&#8600; Arrivée</span></td>
+          <td>14:40</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr><tr>
+          <td>10</td>
+          <td><span class="badge">T1_RWY_2_DEP5</span></td>
+          <td>PLANE_RWY_2_5</td>
+          <td><span class="tag departure">&#8599; Départ</span></td>
+          <td>16:41</td>
+          <td>RWY_2</td>
+          <td><span class="dest">LAX</span></td>
+        </tr></tbody>
+        </table></div>
+
+  <script>
+    function showTab(id, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('panel-' + id).classList.add('active');
+      btn.classList.add('active');
+    }
+    document.querySelector('.tab-btn').click();
+  </script>
+</body>
+</html>
