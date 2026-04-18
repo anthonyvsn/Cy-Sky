@@ -245,12 +245,14 @@ object ScheduleManagerCommand {
 
   /** La TowerControl envoie ce message 30 min simulées avant un événement.
    *  arrivalHour / arrivalMinute = heure cible saisie dans le formulaire
-   *  (= heure d'arrivée souhaitée du nouveau vol). */
+   *  (= heure d'arrivée souhaitée du nouveau vol).
+   *  urgencyLevel = niveau d'urgence hérité de l'InjectedEvent (Emergency → priorité absolue). */
   final case class PrepareNewFlight(
     triggeringEventId: String,
     simTime:           LocalDateTime,
     arrivalHour:       Int,
-    arrivalMinute:     Int
+    arrivalMinute:     Int,
+    urgencyLevel:      cysky.model.UrgencyLevel = cysky.model.UrgencyLevel.Commercial
   ) extends ScheduleManagerCommand
 }
 

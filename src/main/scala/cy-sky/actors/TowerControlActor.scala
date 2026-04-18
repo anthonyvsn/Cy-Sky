@@ -259,14 +259,12 @@ object TowerControlActor {
 
       // ── Annulation de vol(s) par le ScheduleManager ───────────
       case FlightCancelledByManager(cancelled, newSchedule) =>
-        val cancelledIds = cancelled.map(_.airplaneId).distinct
         ctx.log.warn(s"[TowerControl/${slot.name}] SM annule ${cancelled.size} vol(s) : ${cancelled.map(_.flightId).mkString(", ")}")
-        val newStates = cancelledIds.foldLeft(data.flightStates) { (s, id) => s + (id -> "Annulé") }
-        val newCancelled = data.cancelledFlights ++ cancelled
+        // Ne pas écrire dans flightStates : le dashboard affiche "Annulé" via cancelledFlights
+        // (clé = flightId), ce qui évite de contaminer l'état de l'avion entier (ARR + DEP).
         running(ctx, data.copy(
           schedule         = newSchedule,
-          flightStates     = newStates,
-          cancelledFlights = newCancelled
+          cancelledFlights = data.cancelledFlights ++ cancelled
         ), slot)
 
       // ── BOOM piste (conflit atterrissage) ─────────────────────
@@ -420,8 +418,14 @@ object TowerControlActor {
           s"[TowerControl ${fmt(data.simTime)}] Événement ${e.id} (${e.eventType.displayName}) " +
           s"dans 30 min → ScheduleManager notifié (arrivée cible ${e.targetTimeStr})"
         )
+        // Un événement de type EmergencyArrival est toujours traité comme Emergency
+        // quelle que soit la valeur du champ urgencyLevel dans le formulaire.
+        val effectiveUrgency =
+          if (e.eventType == cysky.model.EventType.EmergencyArrival)
+            cysky.model.UrgencyLevel.Emergency
+          else e.urgencyLevel
         data.scheduleManagerRef ! ScheduleManagerCommand.PrepareNewFlight(
-          e.id, data.simTime, e.targetHour, e.targetMinute
+          e.id, data.simTime, e.targetHour, e.targetMinute, effectiveUrgency
         )
       }
       data.copy(notifiedEventIds = data.notifiedEventIds ++ toNotify.map(_.id))
