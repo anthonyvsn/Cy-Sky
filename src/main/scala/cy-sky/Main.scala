@@ -62,7 +62,7 @@ object Main extends App {
     seed         = SCHEDULE_SEED,
     startTime    = SIM_START,
     endTime      = SIM_END
-
+  )
 
   // === MODULE GARAGE (T1-T4, Cargo, Maintenance) ===
   val garage = PetriModule(
@@ -81,6 +81,7 @@ object Main extends App {
       Vector(1, 0)    // G_close        → lockGarage verrouille
     ),
     marking = Vector(nMaxSystem - nAvions, nAvions, 1, 0)
+
   )
 
   // === MODULE TAXIWAY (base) ===
