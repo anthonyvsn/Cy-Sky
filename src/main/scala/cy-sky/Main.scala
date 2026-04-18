@@ -55,14 +55,14 @@ object Main extends App {
   println("════════════════════════════════\n")
 
   // ── Génération du planning ────────────────────────────────────
-  val schedule = ScheduleGeneratorAlgorithm.generate(
-    terminalId   = "T1",
-    runwayCount  = RUNWAY_COUNT,
-    maxAirplanes = MAX_AIRPLANES,
-    seed         = SCHEDULE_SEED,
-    startTime    = SIM_START,
-    endTime      = SIM_END
-  )
+  // val schedule = ScheduleGeneratorAlgorithm.generate(
+  //   terminalId   = "T1",
+  //   runwayCount  = RUNWAY_COUNT,
+  //   maxAirplanes = MAX_AIRPLANES,
+  //   seed         = SCHEDULE_SEED,
+  //   startTime    = SIM_START,
+  //   endTime      = SIM_END
+  // )
 
   // === MODULE GARAGE (T1-T4, Cargo, Maintenance) ===
   val garage = PetriModule(
