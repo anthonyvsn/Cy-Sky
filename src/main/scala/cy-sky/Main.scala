@@ -116,7 +116,7 @@ val trackBase = PetriModule(
   post = Vector(
     Vector(0, 0, 1, 1, 0),  // BufferTrack
     Vector(1, 0, 1, 0, 1),  // Track
-    Vector(1, 0, 1, 1, 0),  // TR_open → addOnTrack ne produit PAS dans TR_open ! ← FIX ICI
+    Vector(1, 0, 1, 1, 1),  // TR_open → addOnTrack ne produit PAS dans TR_open ! ← FIX ICI
     Vector(0, 1, 0, 0, 0)   // TR_close
   ),
   marking = Vector(nMaxSystem - nAvions, 0, 1, 0)

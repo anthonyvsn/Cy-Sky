@@ -121,7 +121,6 @@ digraph "CY-SKY Orly" {
   "Track_1" -> "lockTrack_1";
   "Track_1" -> "takeoff_1";
   "TR_open_1" -> "lockTrack_1";
-  "TR_open_1" -> "addOnTrack_1";
   "TR_close_1" -> "unlockTrack_1";
   "BufferTrack_2" -> "tw1_to_tr2";
   "BufferTrack_2" -> "tw2_to_tr2";
@@ -129,7 +128,6 @@ digraph "CY-SKY Orly" {
   "Track_2" -> "lockTrack_2";
   "Track_2" -> "takeoff_2";
   "TR_open_2" -> "lockTrack_2";
-  "TR_open_2" -> "addOnTrack_2";
   "TR_close_2" -> "unlockTrack_2";
   "BufferTrack_3" -> "tw1_to_tr3";
   "BufferTrack_3" -> "tw2_to_tr3";
@@ -137,7 +135,6 @@ digraph "CY-SKY Orly" {
   "Track_3" -> "lockTrack_3";
   "Track_3" -> "takeoff_3";
   "TR_open_3" -> "lockTrack_3";
-  "TR_open_3" -> "addOnTrack_3";
   "TR_close_3" -> "unlockTrack_3";
   "countPlanes" -> "takeoff_1";
   "countPlanes" -> "takeoff_2";
@@ -226,8 +223,10 @@ digraph "CY-SKY Orly" {
   "takeoff_3" -> "BufferCountPlanes";
   "TW_open_3" -> "redirect_tw2_to_tw3" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "BufferTrack_1" -> "unlockTrack_1" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
+  "TR_open_2" -> "addOnTrack_2" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_2" -> "redirect_tw2_to_tw3" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_2" -> "redirect_tw1_to_tw2" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
+  "TR_open_1" -> "addOnTrack_1" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_2" -> "tw2_to_tr1" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_1" -> "redirect_tw3_to_tw1" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_3" -> "garage_to_tw3" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
@@ -255,6 +254,7 @@ digraph "CY-SKY Orly" {
   "TW_open_3" -> "redirect_tw1_to_tw3" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_2" -> "garage_to_tw2" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_3" -> "tw3_to_tr3" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
+  "TR_open_3" -> "addOnTrack_3" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TR_open_3" -> "tw2_to_tr3" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_3" -> "redirect_tw3_to_tw1" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
   "TW_open_1" -> "tw1_to_tr1" [dir=both,label="self-loop",style=dashed,color="#7F77DD",fontcolor="#534AB7"];
