@@ -65,63 +65,62 @@ object Main extends App {
   // )
 
   // === MODULE GARAGE (T1-T4, Cargo, Maintenance) ===
-  val garage = PetriModule(
-    places      = Vector("BufferGarage", "Garage", "G_open", "G_close"),
-    transitions = Vector("lockGarage", "unlockGarage"),
-    pre  = Vector(
-      Vector(0, 0),   // BufferGarage
-      Vector(1, 0),   // Garage         → lockGarage consomme 1 avion
-      Vector(1, 0),   // G_open         → lockGarage doit consommer open (sinon accumulation)
-      Vector(0, 1)    // G_close        → unlockGarage consomme le verrou
-    ),
-    post = Vector(
-      Vector(0, 1),   // BufferGarage   → unlockGarage libère une place
-      Vector(0, 0),   // Garage
-      Vector(0, 1),   // G_open         → unlockGarage rouvre
-      Vector(1, 0)    // G_close        → lockGarage verrouille
-    ),
-    marking = Vector(nMaxSystem - nAvions, nAvions, 1, 0)
-
-  )
+val garage = PetriModule(
+  places      = Vector("BufferGarage", "Garage", "G_open", "G_close"),
+  transitions = Vector("lockGarage", "unlockGarage"),
+  pre  = Vector(
+    Vector(0, 0),   // BufferGarage
+    Vector(1, 0),   // Garage         → lockGarage consomme 1 avion
+    Vector(1, 0),   // G_open         → lockGarage consomme le verrou ouvert
+    Vector(0, 1)    // G_close        → unlockGarage consomme le verrou fermé
+  ),
+  post = Vector(
+    Vector(0, 1),   // BufferGarage   → unlockGarage libère une place buffer
+    Vector(0, 1),   // Garage         → unlockGarage remet l'avion dans Garage ← FIX ICI
+    Vector(0, 1),   // G_open         → unlockGarage rouvre le verrou
+    Vector(1, 0)    // G_close        → lockGarage ferme le verrou
+  ),
+  marking = Vector(nMaxSystem - nAvions, nAvions, 1, 0)
+)
 
   // === MODULE TAXIWAY (base) ===
-  val taxiWayBase = PetriModule(
-    places      = Vector("BufferTaxiWay", "TaxiWay", "TW_open", "TW_close"),
-    transitions = Vector("addTaxiWay", "lockTaxiWay", "unlockTaxiWay"),
-    pre  = Vector(
-      Vector(0, 0, 0),
-      Vector(0, 1, 0),
-      Vector(1, 1, 0),   // TW_open → lockTaxiWay doit consommer open
-      Vector(0, 0, 1)
-    ),
-    post = Vector(
-      Vector(0, 0, 1),
-      Vector(1, 0, 0),
-      Vector(1, 0, 1),
-      Vector(0, 1, 0)
-    ),
-    marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
-  )
+val taxiWayBase = PetriModule(
+  places      = Vector("BufferTaxiWay", "TaxiWay", "TW_open", "TW_close"),
+  transitions = Vector("addTaxiWay", "lockTaxiWay", "unlockTaxiWay"),
+  pre  = Vector(
+    Vector(1, 0, 0),  // BufferTaxiWay → addTaxiWay consomme
+    Vector(0, 1, 0),  // TaxiWay       → lockTaxiWay consomme
+    Vector(0, 1, 0),  // TW_open       → lockTaxiWay consomme
+    Vector(0, 0, 1)   // TW_close      → unlockTaxiWay consomme
+  ),
+  post = Vector(
+    Vector(0, 0, 1),  // BufferTaxiWay → unlockTaxiWay libère
+    Vector(1, 0, 1),  // TaxiWay       → addTaxiWay ajoute, unlockTaxiWay remet
+    Vector(0, 0, 1),  // TW_open       → unlockTaxiWay rouvre (PAS addTaxiWay !) ← FIX ICI
+    Vector(0, 1, 0)   // TW_close      → lockTaxiWay ferme
+  ),
+  marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
+)
 
   // === MODULE TRACK (base) ===
   // Colonnes : landing | lockTrack | unlockTrack | takeoff | addOnTrack
-  val trackBase = PetriModule(
-    places      = Vector("BufferTrack", "Track", "TR_open", "TR_close"),
-    transitions = Vector("landing", "lockTrack", "unlockTrack", "takeoff", "addOnTrack"),
-    pre  = Vector(
-      Vector(0, 0, 0, 0, 0),  // BufferTrack
-      Vector(0, 1, 0, 0, 0),  // Track        → lockTrack consomme
-      Vector(1, 1, 0, 1, 1),  // TR_open      → lockTrack doit consommer open + landing/takeoff/addOnTrack
-      Vector(0, 0, 1, 0, 0)   // TR_close     → unlockTrack consomme le verrou
-    ),
-    post = Vector(
-      Vector(0, 0, 1, 0, 0),  // BufferTrack  → unlockTrack libère
-      Vector(1, 0, 0, 0, 1),  // Track        → landing & addOnTrack placent un avion
-      Vector(1, 0, 1, 1, 1),  // TR_open      → self-loop pour landing/unlockTrack/takeoff/addOnTrack
-      Vector(0, 1, 0, 0, 0)   // TR_close     → lockTrack verrouille
-    ),
-    marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
-  )
+val trackBase = PetriModule(
+  places      = Vector("BufferTrack", "Track", "TR_open", "TR_close"),
+  transitions = Vector("landing", "lockTrack", "unlockTrack", "takeoff", "addOnTrack"),
+  pre  = Vector(
+    Vector(0, 0, 1, 0, 0),  // BufferTrack
+    Vector(0, 1, 0, 1, 0),  // Track
+    Vector(1, 1, 0, 1, 1),  // TR_open → toutes les transitions vérifient que la piste est ouverte
+    Vector(0, 0, 1, 0, 0)   // TR_close
+  ),
+  post = Vector(
+    Vector(0, 0, 1, 1, 0),  // BufferTrack
+    Vector(1, 0, 1, 0, 1),  // Track
+    Vector(1, 0, 1, 1, 0),  // TR_open → addOnTrack ne produit PAS dans TR_open ! ← FIX ICI
+    Vector(0, 1, 0, 0, 0)   // TR_close
+  ),
+  marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
+)
 
   // === RÉPLICATION & ASSEMBLAGE DIAGONAL ===
   val allTaxiWays = replicateModule(taxiWayBase, N)
@@ -143,22 +142,27 @@ object Main extends App {
   // === LIEN TW → TRACK (N×N = 9 transitions) ===
   val twToTrPairs = for (i <- 1 to N; j <- 1 to N) yield (i, j)
 
-  val withTwTr = twToTrPairs.foldLeft(withGarageTw) { case (sys, (i, j)) =>
-    val s1 = addLinkTransition(sys, s"tw${i}_to_tr${j}",
-      s"TaxiWay_$i", s"Track_$j")
-    val s2 = addArc(s1, s"BufferTrack_$j",   s"tw${i}_to_tr${j}", 1, 0)
-    val s3 = addArc(s2, s"BufferTaxiWay_$i", s"tw${i}_to_tr${j}", 0, 1)
-    addArc(s3, s"TR_open_$j",               s"tw${i}_to_tr${j}", 1, 1)
-  }
+val withTwTr = twToTrPairs.foldLeft(withGarageTw) { case (sys, (i, j)) =>
+  val s1 = addLinkTransition(sys, s"tw${i}_to_tr${j}",
+    s"TaxiWay_$i", s"Track_$j")
+  val s2 = addArc(s1, s"BufferTrack_$j",   s"tw${i}_to_tr${j}", 1, 0)
+  val s3 = addArc(s2, s"BufferTaxiWay_$i", s"tw${i}_to_tr${j}", 0, 1)
+  // AJOUTER ICI : vérifier que TW_i est ouvert
+  val s4 = addArc(s3, s"TW_open_$i", s"tw${i}_to_tr${j}", 1, 1)  // ← AJOUTER
+  addArc(s4, s"TR_open_$j", s"tw${i}_to_tr${j}", 1, 1)
+}
 
   // === REDIRECTIONS TW ↔ TW ===
   val redirectPairs = for (i <- 1 to N; j <- 1 to N; if i != j) yield (i, j)
 
-  val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
-    val s1 = addLinkTransition(sys, s"redirect_tw${i}_to_tw${j}",
-      s"TaxiWay_$i", s"TaxiWay_$j")
-    addArc(s1, s"TW_open_$j", s"redirect_tw${i}_to_tw${j}", 1, 1)
-  }
+val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
+  val s1 = addLinkTransition(sys, s"redirect_tw${i}_to_tw${j}",
+    s"TaxiWay_$i", s"TaxiWay_$j")
+  // Vérifier que TW_i est ouvert (self-loop)
+  val s2 = addArc(s1, s"TW_open_$i", s"redirect_tw${i}_to_tw${j}", 1, 1)
+  // Vérifier que TW_j est ouvert (self-loop)
+  addArc(s2, s"TW_open_$j", s"redirect_tw${i}_to_tw${j}", 1, 1)
+}
 
   // === countPlanes GLOBAL ===
   val withCount = addPlace(
