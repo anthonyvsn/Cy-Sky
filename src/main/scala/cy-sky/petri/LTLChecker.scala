@@ -18,43 +18,75 @@ object LTLChecker {
   type Path = List[Marking]
   
   // Évalue une formule sur un chemin infini (simplifié : chemins finis)
-  def evaluateOnPath(path: Path, formula: LTLFormula): Boolean = {
-    if (path.isEmpty) return false
-    
-    formula match {
-      case Atomic(pred) => pred(path.head)
-      
-      case Not(f) => !evaluateOnPath(path, f)
-      
-      case And(f1, f2) => 
-        evaluateOnPath(path, f1) && evaluateOnPath(path, f2)
-      
-      case Or(f1, f2) => 
-        evaluateOnPath(path, f1) || evaluateOnPath(path, f2)
-      
-      case Implies(f1, f2) => 
-        !evaluateOnPath(path, f1) || evaluateOnPath(path, f2)
-      
-      case Next(f) => 
-        if (path.tail.isEmpty) false 
-        else evaluateOnPath(path.tail, f)
-      
-      case Always(f) => 
-        path.forall(m => evaluateOnPath(List(m), f))
-      
-      case Eventually(f) => 
-        path.exists(m => evaluateOnPath(List(m), f))
-      
+  def eval(m: Marking,
+           f: LTLFormula,
+           graph: ReachabilityGraph,
+           seen: Set[Marking] = Set()
+          ): Boolean = {
+
+    f match {
+
+      case Atomic(pred) =>
+        pred(m)
+
+      case Not(f1) =>
+        !eval(m, f1, graph, seen)
+
+      case And(f1, f2) =>
+        eval(m, f1, graph, seen) &&
+        eval(m, f2, graph, seen)
+
+      case Or(f1, f2) =>
+        eval(m, f1, graph, seen) ||
+        eval(m, f2, graph, seen)
+
+      case Next(f1) =>
+        graph.transitions.getOrElse(m, Map.empty)
+          .values.flatten
+          .forall(m2 => eval(m2, f1, graph, seen + m))
+
+      case Eventually(f1) =>
+        eval(m, f1, graph, seen) ||
+        graph.transitions.getOrElse(m, Map.empty)
+          .values.flatten
+          .exists(m2 =>
+            !seen.contains(m2) &&
+            eval(m2, f1, graph, seen + m)
+          )
+
+      case Always(f1) =>
+        eval(m, f1, graph, seen) &&
+        graph.transitions.getOrElse(m, Map.empty)
+          .values.flatten
+          .forall(m2 =>
+            !seen.contains(m2) &&
+            eval(m2, f1, graph, seen + m)
+          )
+
       case Until(f1, f2) =>
-        path.indices.exists { i =>
-          evaluateOnPath(List(path(i)), f2) &&
-          (0 until i).forall(j => evaluateOnPath(List(path(j)), f1))
-        }
+        if (eval(m, f2, graph, seen)) true
+        else if (!eval(m, f1, graph, seen)) false
+        else
+          graph.transitions.getOrElse(m, Map.empty)
+            .values.flatten
+            .forall(m2 =>
+              !seen.contains(m2) &&
+              eval(m2, f1, graph, seen + m)
+            )
+      case Implies(f1, f2) =>
+        !eval(m, f1, graph, seen) ||
+        eval(m, f2, graph, seen)
     }
+  }
+
+  def check(petri: PetriModule, formula: LTLFormula): Boolean = {
+    val graph = StateSpaceExplorer.buildReachabilityGraph(petri)
+    val init  = graph.states.head
+    eval(init, formula, graph)
   }
   
   // Génère tous les chemins du graphe (jusqu'à une profondeur max)
-  def generatePaths(graph: ReachabilityGraph, maxDepth: Int = 10): Set[Path] = {
+  def generatePaths(graph: ReachabilityGraph, maxDepth: Int = 5): Set[Path] = {
     val initial = graph.states.headOption.getOrElse(return Set.empty)
     
     def explore(current: Marking, depth: Int, visited: Set[Marking]): Set[Path] = {
@@ -76,16 +108,6 @@ object LTLChecker {
     }
     
     explore(initial, 0, Set(initial))
-  }
-  
-  // Vérifie une formule sur TOUS les chemins du graphe
-  def verify(petri: PetriModule, formula: LTLFormula): Boolean = {
-    val graph = buildReachabilityGraph(petri)
-    val paths = generatePaths(graph)
-    
-    paths.forall { path =>
-      evaluateOnPath(path, formula)
-    }
   }
   
   // ═══════════════════════════════════════════════════════════

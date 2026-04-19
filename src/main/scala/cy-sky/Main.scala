@@ -1,6 +1,5 @@
 package cysky
 
-
 import akka.Done
 import akka.actor.typed.{ActorSystem, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
@@ -49,120 +48,140 @@ object Main extends App {
 
   // LTL
   val noDeadlock = LTLChecker.noDeadlock(petri)
-  val ltlOK = LTLChecker.verify(petri, noDeadlock)
+  val ltlOK = LTLChecker.check(petri, noDeadlock)
 
   println(s"LTL noDeadlock : $ltlOK")
   println("════════════════════════════════\n")
 
-  // ── Génération du planning ────────────────────────────────────
-  // val schedule = ScheduleGeneratorAlgorithm.generate(
-  //   terminalId   = "T1",
-  //   runwayCount  = RUNWAY_COUNT,
-  //   maxAirplanes = MAX_AIRPLANES,
-  //   seed         = SCHEDULE_SEED,
-  //   startTime    = SIM_START,
-  //   endTime      = SIM_END
-  // )
-
   // === MODULE GARAGE (T1-T4, Cargo, Maintenance) ===
-val garage = PetriModule(
-  places      = Vector("BufferGarage", "Garage", "G_open", "G_close"),
-  transitions = Vector("lockGarage", "unlockGarage"),
-  pre  = Vector(
-    Vector(0, 0),   // BufferGarage
-    Vector(1, 0),   // Garage         → lockGarage consomme 1 avion
-    Vector(1, 0),   // G_open         → lockGarage consomme le verrou ouvert
-    Vector(0, 1)    // G_close        → unlockGarage consomme le verrou fermé
-  ),
-  post = Vector(
-    Vector(0, 1),   // BufferGarage   → unlockGarage libère une place buffer
-    Vector(0, 1),   // Garage         → unlockGarage remet l'avion dans Garage ← FIX ICI
-    Vector(0, 1),   // G_open         → unlockGarage rouvre le verrou
-    Vector(1, 0)    // G_close        → lockGarage ferme le verrou
-  ),
-  marking = Vector(nMaxSystem - nAvions, nAvions, 1, 0)
-)
+  val garage = PetriModule(
+    places      = Vector("BufferGarage", "Garage", "G_open", "G_close"),
+    transitions = Vector("lockGarage", "unlockGarage"),
+    pre  = Vector(
+      Vector(0, 0),   // BufferGarage
+      Vector(1, 0),   // Garage         → lockGarage consomme 1 avion
+      Vector(1, 0),   // G_open         → lockGarage consomme le verrou ouvert
+      Vector(0, 1)    // G_close        → unlockGarage consomme le verrou fermé
+    ),
+    post = Vector(
+      Vector(0, 1),   // BufferGarage   → unlockGarage libère une place buffer
+      Vector(0, 1),   // Garage         → unlockGarage remet l'avion dans Garage
+      Vector(0, 1),   // G_open         → unlockGarage rouvre le verrou
+      Vector(1, 0)    // G_close        → lockGarage ferme le verrou
+    ),
+    marking = Vector(nMaxSystem - nAvions, nAvions, 1, 0)
+  )
 
   // === MODULE TAXIWAY (base) ===
-val taxiWayBase = PetriModule(
-  places      = Vector("BufferTaxiWay", "TaxiWay", "TW_open", "TW_close"),
-  transitions = Vector("addTaxiWay", "lockTaxiWay", "unlockTaxiWay"),
-  pre  = Vector(
-    Vector(1, 0, 0),  // BufferTaxiWay → addTaxiWay consomme
-    Vector(0, 1, 0),  // TaxiWay       → lockTaxiWay consomme
-    Vector(0, 1, 0),  // TW_open       → lockTaxiWay consomme
-    Vector(0, 0, 1)   // TW_close      → unlockTaxiWay consomme
-  ),
-  post = Vector(
-    Vector(0, 0, 1),  // BufferTaxiWay → unlockTaxiWay libère
-    Vector(1, 0, 1),  // TaxiWay       → addTaxiWay ajoute, unlockTaxiWay remet
-    Vector(0, 0, 1),  // TW_open       → unlockTaxiWay rouvre (PAS addTaxiWay !) ← FIX ICI
-    Vector(0, 1, 0)   // TW_close      → lockTaxiWay ferme
-  ),
-  marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
-)
+  val taxiWayBase = PetriModule(
+    places = Vector(
+      "BufferTaxiWay",
+      "TaxiWay",
+      "TW_open",
+      "TW_close",
+      "Cap_TaxiWay"
+    ),
+
+    transitions = Vector(
+      "addTaxiWay",
+      "lockTaxiWay",
+      "unlockTaxiWay"
+    ),
+
+    // PRE : chaque ligne = une place, chaque colonne = une transition
+    pre = Vector(
+      // addTaxiWay, lockTaxiWay, unlockTaxiWay
+      Vector(1, 0, 0),  // BufferTaxiWay - addTaxiWay consomme 1 du buffer
+      Vector(0, 1, 1),  // TaxiWay - lock et unlock consomment l'avion
+      Vector(0, 1, 0),  // TW_open - lock vérifie ouvert
+      Vector(0, 0, 1),  // TW_close - unlock vérifie fermé
+      Vector(1, 0, 0)   // Cap_TaxiWay - addTaxiWay consomme la capacité
+    ),
+
+    // POST
+    post = Vector(
+      // addTaxiWay, lockTaxiWay, unlockTaxiWay
+      Vector(0, 0, 0),  // BufferTaxiWay - capacité consommée
+      Vector(1, 1, 1),  // TaxiWay - add produit, lock/unlock maintiennent
+      Vector(0, 0, 1),  // TW_open - unlock rouvre
+      Vector(0, 1, 0),  // TW_close - lock ferme
+      Vector(0, 0, 1)   // Cap_TaxiWay - unlock RESTAURE la capacité ← FIX ICI
+    ),
+
+    marking = Vector(
+      nMaxSystem - nAvions,  // BufferTaxiWay
+      0,                     // TaxiWay
+      1,                     // TW_open
+      0,                     // TW_close
+      1                      // Cap_TaxiWay = 1 capacité disponible
+    )
+  )
 
   // === MODULE TRACK (base) ===
-  // Colonnes : landing | lockTrack | unlockTrack | takeoff | addOnTrack
-val trackBase = PetriModule(
-  places      = Vector("BufferTrack", "Track", "TR_open", "TR_close"),
-  transitions = Vector("landing", "lockTrack", "unlockTrack", "takeoff", "addOnTrack"),
-  pre  = Vector(
-    Vector(0, 0, 1, 0, 0),  // BufferTrack
-    Vector(0, 1, 0, 1, 0),  // Track
-    Vector(1, 1, 0, 1, 1),  // TR_open → toutes les transitions vérifient que la piste est ouverte
-    Vector(0, 0, 1, 0, 0)   // TR_close
-  ),
-  post = Vector(
-    Vector(0, 0, 1, 1, 0),  // BufferTrack
-    Vector(1, 0, 1, 0, 1),  // Track
-    Vector(1, 0, 1, 1, 1),  // TR_open → addOnTrack ne produit PAS dans TR_open ! ← FIX ICI
-    Vector(0, 1, 0, 0, 0)   // TR_close
-  ),
-  marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
-)
+  val trackBase = PetriModule(
+    places      = Vector("BufferTrack", "Track", "TR_open", "TR_close"),
+    transitions = Vector("landing", "lockTrack", "unlockTrack", "takeoff", "addOnTrack"),
+    pre  = Vector(
+      Vector(0, 0, 1, 0, 0),  // BufferTrack
+      Vector(0, 1, 1, 1, 0),  // Track
+      Vector(1, 1, 0, 1, 1),  // TR_open
+      Vector(0, 0, 1, 0, 0)   // TR_close
+    ),
+    post = Vector(
+      Vector(0, 0, 1, 1, 0),  // BufferTrack
+      Vector(1, 1, 1, 0, 1),  // Track
+      Vector(1, 0, 1, 1, 1),  // TR_open
+      Vector(0, 1, 0, 0, 0)   // TR_close
+    ),
+    marking = Vector(nMaxSystem - nAvions, 0, 1, 0)
+  )
 
   // === RÉPLICATION & ASSEMBLAGE DIAGONAL ===
   val allTaxiWays = replicateModule(taxiWayBase, N)
   val allTracks   = replicateModule(trackBase, N)
   val base        = blockDiag(garage, blockDiag(allTaxiWays, allTracks))
 
-  // === LIEN GARAGE → TAXIWAY (fonctionnel, pas de boucle) ===
+  // === LIEN GARAGE → TAXIWAY ===
   val garageToTwPairs = (1 to N).map(j => j)
 
   val withGarageTw = garageToTwPairs.foldLeft(base) { (sys, j) =>
-    val s1 = addLinkTransition(sys, s"garage_to_tw$j",
-      "Garage", s"TaxiWay_$j")
+    val s1 = addLinkTransition(sys, s"garage_to_tw$j", "Garage", s"TaxiWay_$j")
     val s2 = addArc(s1, s"BufferTaxiWay_$j", s"garage_to_tw$j", 1, 0)
     val s3 = addArc(s2, "BufferGarage",      s"garage_to_tw$j", 0, 1)
     val s4 = addArc(s3, "G_open",            s"garage_to_tw$j", 1, 1)
-    addArc(s4, s"TW_open_$j",               s"garage_to_tw$j", 1, 1)
+    val s5 = addArc(s4, s"TW_open_$j",       s"garage_to_tw$j", 1, 1)
+    // AJOUTER : consommer Cap_TaxiWay_j
+    addArc(s5, s"Cap_TaxiWay_$j",            s"garage_to_tw$j", 1, 0)
   }
 
   // === LIEN TW → TRACK (N×N = 9 transitions) ===
   val twToTrPairs = for (i <- 1 to N; j <- 1 to N) yield (i, j)
 
-val withTwTr = twToTrPairs.foldLeft(withGarageTw) { case (sys, (i, j)) =>
-  val s1 = addLinkTransition(sys, s"tw${i}_to_tr${j}",
-    s"TaxiWay_$i", s"Track_$j")
-  val s2 = addArc(s1, s"BufferTrack_$j",   s"tw${i}_to_tr${j}", 1, 0)
-  val s3 = addArc(s2, s"BufferTaxiWay_$i", s"tw${i}_to_tr${j}", 0, 1)
-  // AJOUTER ICI : vérifier que TW_i est ouvert
-  val s4 = addArc(s3, s"TW_open_$i", s"tw${i}_to_tr${j}", 1, 1)  // ← AJOUTER
-  addArc(s4, s"TR_open_$j", s"tw${i}_to_tr${j}", 1, 1)
-}
+  val withTwTr = twToTrPairs.foldLeft(withGarageTw) { case (sys, (i, j)) =>
+    val s1 = addLinkTransition(sys, s"tw${i}_to_tr${j}", s"TaxiWay_$i", s"Track_$j")
+    val s2 = addArc(s1, s"BufferTrack_$j",   s"tw${i}_to_tr${j}", 1, 0)
+    val s3 = addArc(s2, s"BufferTaxiWay_$i", s"tw${i}_to_tr${j}", 0, 1)
+    val s4 = addArc(s3, s"TW_open_$i",       s"tw${i}_to_tr${j}", 1, 1)
+    val s5 = addArc(s4, s"TR_open_$j",       s"tw${i}_to_tr${j}", 1, 1)
+    // AJOUTER : restaurer Cap_TaxiWay_i quand on quitte le taxiway
+    addArc(s5, s"Cap_TaxiWay_$i",            s"tw${i}_to_tr${j}", 0, 1)
+  }
 
   // === REDIRECTIONS TW ↔ TW ===
   val redirectPairs = for (i <- 1 to N; j <- 1 to N; if i != j) yield (i, j)
 
-val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
-  val s1 = addLinkTransition(sys, s"redirect_tw${i}_to_tw${j}",
-    s"TaxiWay_$i", s"TaxiWay_$j")
-  // Vérifier que TW_i est ouvert (self-loop)
-  val s2 = addArc(s1, s"TW_open_$i", s"redirect_tw${i}_to_tw${j}", 1, 1)
-  // Vérifier que TW_j est ouvert (self-loop)
-  addArc(s2, s"TW_open_$j", s"redirect_tw${i}_to_tw${j}", 1, 1)
-}
+  val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
+    val s1 = addLinkTransition(sys, s"redirect_tw${i}_to_tw${j}",
+      s"TaxiWay_$i", s"TaxiWay_$j")
+    // Vérifier que TW_i est ouvert
+    val s2 = addArc(s1, s"TW_open_$i", s"redirect_tw${i}_to_tw${j}", 1, 1)
+    // Vérifier que TW_j est ouvert
+    val s3 = addArc(s2, s"TW_open_$j", s"redirect_tw${i}_to_tw${j}", 1, 1)
+    // AJOUTER : restaurer Cap_TaxiWay_i (on quitte)
+    val s4 = addArc(s3, s"Cap_TaxiWay_$i", s"redirect_tw${i}_to_tw${j}", 0, 1)
+    // AJOUTER : consommer Cap_TaxiWay_j (on arrive)
+    addArc(s4, s"Cap_TaxiWay_$j", s"redirect_tw${i}_to_tw${j}", 1, 0)
+  }
 
   // === countPlanes GLOBAL ===
   val withCount = addPlace(
@@ -222,23 +241,14 @@ val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
   PetriVisualizer.saveHtml(system, "petri_schema.html", "CY-SKY Orly")
   PetriVisualizer.saveDot(system, "petri_schema.dot", "CY-SKY Orly")
 
-  // =========================================================================
-  // === FONCTION DE VÉRIFICATION ============================================
-  // =========================================================================
-  // Vérifie les invariants structurels du réseau sur un marquage donné :
-  //   1. Aucun jeton négatif
-  //   2. Conservation globale : countPlanes + BufferCountPlanes == nMaxSystem
-  //   3. Exclusion mutuelle des verrous (open + close == 1 pour chaque module)
   def verify(m: PetriModule): (Boolean, List[String]) = {
     val errors = scala.collection.mutable.ListBuffer[String]()
 
-    // 1. Aucun jeton négatif
     m.marking.zipWithIndex.foreach { case (tokens, i) =>
       if (tokens < 0)
         errors += s"Jeton négatif : ${m.places(i)} = $tokens"
     }
 
-    // 2. Conservation : countPlanes + BufferCountPlanes == nMaxSystem
     val iCount  = m.places.indexOf("countPlanes")
     val iBuf    = m.places.indexOf("BufferCountPlanes")
     if (iCount >= 0 && iBuf >= 0) {
@@ -247,7 +257,6 @@ val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
         errors += s"Conservation violée : countPlanes(${m.marking(iCount)}) + BufferCountPlanes(${m.marking(iBuf)}) = $total ≠ $nMaxSystem"
     }
 
-    // 3. Exclusion mutuelle des verrous (open XOR close == 1)
     def checkLock(openName: String, closeName: String): Unit = {
       val iO = m.places.indexOf(openName)
       val iC = m.places.indexOf(closeName)
@@ -267,12 +276,6 @@ val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
     (ok, errors.toList)
   }
 
-  // =========================================================================
-  // === TEST ALÉATOIRE (1000 transitions) ===================================
-  // =========================================================================
-  // Tire aléatoirement une transition franchissable à chaque étape.
-  // Vérifie les invariants après chaque franchissement.
-  // En cas de deadlock : affiche un avertissement et réinitialise l'état.
   def randomTest(initial: PetriModule, steps: Int = 1000): Unit = {
     import cysky.petri.PetriComposer.{enabledTransitions, fireTransition}
     val rng     = new scala.util.Random(42)
@@ -313,6 +316,52 @@ val withRedirects = redirectPairs.foldLeft(withTwTr) { case (sys, (i, j)) =>
       println(s"  => Test ECHOUE")
   }
 
-  // Lancement du test
   randomTest(system)
+
+  println("\n=== TEST LTL SUR SYSTÈME AÉRIEN ===")
+
+  (1 to N).foreach { i =>
+    val name = s"TaxiWay_$i"
+    val idx = system.places.indexOf(name)
+
+    if (idx == -1) {
+      println(s"$name capacity SKIPPED (not found)")
+    } else {
+      val formula = LTLChecker.noOverflow(idx, 1)
+      println(s"$name capacity OK : " + LTLChecker.check(system, formula))
+    }
+  }
+
+  val req = system.places.indexOf("BufferTrack_1")
+  val landed = system.places.indexOf("Track_1")
+
+  if (req != -1 && landed != -1) {
+    val serviceOK = LTLChecker.requestEventuallyServed(req, landed)
+    println("Service eventual : " + LTLChecker.check(system, serviceOK))
+  }
+
+  println("No deadlock : " + LTLChecker.check(system, LTLChecker.noDeadlock(system)))
+
+  def lockOK(open: Int, close: Int) =
+    LTLChecker.Always(
+      LTLChecker.Atomic(m => m.tokens(open) + m.tokens(close) == 1)
+    )
+
+  (1 to N).foreach { i =>
+    val o = system.places.indexOf(s"TR_open_$i")
+    val c = system.places.indexOf(s"TR_close_$i")
+    if (o != -1 && c != -1) {
+      println(s"Lock TR_$i OK : " + LTLChecker.check(system, lockOK(o, c)))
+    }
+  }
+
+  val iCount = system.places.indexOf("countPlanes")
+  val iBuf   = system.places.indexOf("BufferCountPlanes")
+
+  if (iCount != -1 && iBuf != -1) {
+    val conservation = LTLChecker.Always(
+      LTLChecker.Atomic(m => m.tokens(iCount) + m.tokens(iBuf) == nMaxSystem)
+    )
+    println("Conservation avions : " + LTLChecker.check(system, conservation))
+  }
 }

@@ -31,36 +31,33 @@ object StateSpaceExplorer {
   }
   
   // Construit le graphe d'accessibilité complet (BFS)
-  def buildReachabilityGraph(petri: PetriModule): ReachabilityGraph = {
-    val initial = Marking(petri.marking)
-    val visited = mutable.Set[Marking]()
-    val queue = mutable.Queue[Marking](initial)
-    val edges = mutable.Map[Marking, Map[String, Set[Marking]]]()
-    
-    while (queue.nonEmpty) {
-      val current = queue.dequeue()
+  def buildReachabilityGraph(petri: PetriModule, maxStates: Int = 100000): ReachabilityGraph = {
+  val initial = Marking(petri.marking)
+  val visited = mutable.Set[Marking]()
+  val queue = mutable.Queue[Marking](initial)
+  val edges = mutable.Map[Marking, Map[String, Set[Marking]]]()
+  
+  while (queue.nonEmpty && visited.size < maxStates) {  // ← Ajout de la condition
+    val current = queue.dequeue()
+    if (!visited.contains(current)) {
+      visited += current
+      val successors = mutable.Map[String, Set[Marking]]()
       
-      if (!visited.contains(current)) {
-        visited += current
-        val successors = mutable.Map[String, Set[Marking]]()
+      enabledTransitions(petri, current).foreach { tIdx =>
+        val transName = petri.transitions(tIdx)
+        val nextMarking = fireTransition(petri, current, tIdx)
+        successors(transName) = successors.getOrElse(transName, Set.empty) + nextMarking
         
-        enabledTransitions(petri, current).foreach { tIdx =>
-          val transName = petri.transitions(tIdx)
-          val nextMarking = fireTransition(petri, current, tIdx)
-          
-          successors(transName) = successors.getOrElse(transName, Set.empty) + nextMarking
-          
-          if (!visited.contains(nextMarking)) {
-            queue.enqueue(nextMarking)
-          }
+        if (!visited.contains(nextMarking) && visited.size < maxStates) {  // ← Vérification avant d'ajouter
+          queue.enqueue(nextMarking)
         }
-        
-        edges(current) = successors.toMap
       }
+      edges(current) = successors.toMap
     }
-    
-    ReachabilityGraph(visited.toSet, edges.toMap)
   }
+  
+  ReachabilityGraph(visited.toSet, edges.toMap)
+}
   
   // Vérifie si un marquage cible est atteignable
   def isReachable(petri: PetriModule, target: Vector[Int]): Boolean = {
