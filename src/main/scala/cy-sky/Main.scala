@@ -128,7 +128,6 @@ object Main extends App {
       "clock-controle"
     )
 
-    // Observer les deux horloges — chacune envoie un GuardianMsg distinct
     ctx.watchWith(clockLibre,    ClockDone("libre"))
     ctx.watchWith(clockControle, ClockDone("controle"))
 
