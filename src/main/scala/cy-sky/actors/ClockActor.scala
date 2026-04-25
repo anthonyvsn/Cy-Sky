@@ -1,11 +1,12 @@
 package cysky.actors
 
 import akka.actor.typed.{ActorRef, Behavior}
-import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.{Behaviors, TimerScheduler}
+import cysky.SimState
 import cysky.protocol.ControlTowerCommand
 import cysky.protocol.ControlTowerCommand.Tick
 import java.time.LocalDateTime
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 
 object ClockActor {
 
@@ -15,14 +16,6 @@ object ClockActor {
 
   private case object TickKey
 
-  /**
-   * @param towerRef     Acteur ControlTower qui reçoit les ticks
-   * @param startTime    Heure de départ de la simulation
-   * @param tickInterval Intervalle réel entre deux ticks (ex: 50.millis)
-   * @param simStep      Pas de temps simulé par tick (ex: 1 minute)
-   * @param endTime      Heure de fin — le clock s'arrête proprement quand
-   *                     le temps simulé dépasse cette valeur
-   */
   def apply(
     towerRef:     ActorRef[ControlTowerCommand],
     startTime:    LocalDateTime,
@@ -31,32 +24,35 @@ object ClockActor {
     endTime:      LocalDateTime
   ): Behavior[ClockCommand] =
     Behaviors.withTimers { timers =>
-      timers.startTimerWithFixedDelay(TickKey, TimerFired, tickInterval)
-      running(towerRef, startTime, simStep, endTime)
+      timers.startSingleTimer(TickKey, TimerFired, tickInterval)
+      running(towerRef, startTime, simStep, endTime, timers)
     }
 
   private def running(
     towerRef: ActorRef[ControlTowerCommand],
     now:      LocalDateTime,
     simStep:  java.time.Duration,
-    endTime:  LocalDateTime
+    endTime:  LocalDateTime,
+    timers:   TimerScheduler[ClockCommand]
   ): Behavior[ClockCommand] =
     Behaviors.receive { (ctx, msg) =>
       msg match {
         case TimerFired =>
           val next = now.plus(simStep)
           if (!next.isBefore(endTime)) {
-            // Dernier tick puis arrêt propre
             towerRef ! Tick(next)
             ctx.log.info(s"[Clock] Fin de journée simulée — $next")
             Behaviors.stopped
           } else {
             towerRef ! Tick(next)
-            running(towerRef, next, simStep, endTime)
+            val delay = SimState.getTickInterval.millis
+            timers.startSingleTimer(TickKey, TimerFired, delay)
+            running(towerRef, next, simStep, endTime, timers)
           }
 
         case Stop =>
           ctx.log.info("[Clock] Arrêt forcé de l'horloge")
+          timers.cancelAll()
           Behaviors.stopped
       }
     }

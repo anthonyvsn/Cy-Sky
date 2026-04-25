@@ -3,9 +3,7 @@ package cysky
 import akka.actor.typed.{ActorSystem, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import cysky.actors.{TowerControlActor, ClockActor, ScheduleManagerActor}
-import cysky.models.ScheduleGeneratorAlgorithm
-import cysky.petri.PetriScheduleVerifier
-import java.time.{LocalDate, LocalTime}
+import java.time.LocalDate
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 
@@ -17,60 +15,40 @@ import scala.concurrent.duration._
 //   - droite  : Mode Contrôle (ScheduleManager avec vérif Pétri)
 //
 // Calibrage temporel :
-//   tickInterval = 112 ms  (temps réel entre deux ticks)
+//   tickInterval = 112 ms  (temps réel entre deux ticks, ajustable via UI)
 //   simStep      = 1 min   (temps simulé avancé par tick)
 //   → journée 06:00 → 23:59 (1 079 ticks) ≈ 2 minutes réelles
 // ═══════════════════════════════════════════════════════════════
 object Main extends App {
 
-  // === PARAMÈTRES ===
-  val RUNWAY_COUNT  = 3
-  val GARAGE_COUNT  = 6
-  val MAX_AIRPLANES = 15
-  val SCHEDULE_SEED = 42L
-  val SIM_START     = LocalTime.of(6, 0)
-  val SIM_END       = LocalTime.of(23, 59)
-  val SIM_DATE      = LocalDate.now()
-
   val TICK_INTERVAL: FiniteDuration     = 112.millis
   val SIM_STEP:      java.time.Duration = java.time.Duration.ofMinutes(1)
+  val SIM_DATE                          = LocalDate.now()
 
-  // ── Génération du planning (partagé entre les deux sims) ─────
-  val schedule = ScheduleGeneratorAlgorithm.generate(
-    terminalId   = "T1",
-    runwayCount  = RUNWAY_COUNT,
-    maxAirplanes = MAX_AIRPLANES,
-    seed         = SCHEDULE_SEED,
-    startTime    = SIM_START,
-    endTime      = SIM_END
-  )
-
-  SimState.setSchedule(schedule)
-  val totalFlights = schedule.values.flatten.size / 2
-  println(s"Planning généré : $totalFlights vols sur ${schedule.size} piste(s)")
-  println(s"Durée simulation réelle estimée : ~${SIM_START.until(SIM_END, java.time.temporal.ChronoUnit.MINUTES) * TICK_INTERVAL.toMillis / 1000} secondes")
-  println("─" * 60)
-
-  // ── Vérification Pétri du schedule ───────────────────────────
-  println("Vérification réseau de Pétri...")
-  val verifResult = PetriScheduleVerifier.verify(schedule, RUNWAY_COUNT, GARAGE_COUNT)
-  println(verifResult.report)
-  if (!verifResult.valid) {
-    println("⚠ Schedule invalide — correction nécessaire avant de lancer la simulation.")
-    System.exit(1)
-  }
-  println("─" * 60)
-
-  // ── Démarrage du serveur HTTP ─────────────────────────────────
+  // ── Démarrage du serveur HTTP (avant la configuration) ───────
   DashboardServer.start()
   println("Dashboard disponible → http://localhost:8080")
-  println("En attente du clic Start dans le navigateur...")
+  println("En attente de la configuration dans le navigateur...")
+  println("─" * 60)
+
+  // ── Attente de la configuration utilisateur ──────────────────
+  SimState.configLatch.await()
+  val cfg = SimState.getConfig.get
+  println(s"Configuration : ${cfg.runwayCount} piste(s), ${cfg.garageCount} garage(s), ${cfg.maxAirplanes} avions max, graine=${cfg.seed}")
+  val totalFlights = SimState.scheduleSnapshot.values.flatten.size / 2
+  val simDurSec    = (cfg.startHour until cfg.endHour + 1).size * 60 * TICK_INTERVAL.toMillis / 1000
+  println(s"Planning généré : $totalFlights vols — durée réelle estimée : ~${(cfg.endHour * 60 + cfg.endMinute - cfg.startHour * 60 - cfg.startMinute) * TICK_INTERVAL.toMillis / 1000} s")
   println("─" * 60)
 
   // ── Attente du clic Start ─────────────────────────────────────
+  println("En attente du clic Start dans le navigateur...")
   SimState.startLatch.await()
   println("Simulations démarrées !")
   println("─" * 60)
+
+  val schedule = SimState.scheduleSnapshot
+  val simStart  = SIM_DATE.atTime(cfg.startHour, cfg.startMinute)
+  val simEnd    = SIM_DATE.atTime(cfg.endHour, cfg.endMinute)
 
   // ── Messages du guardian ──────────────────────────────────────
   sealed trait GuardianMsg
@@ -79,14 +57,11 @@ object Main extends App {
   // ── Guardian ─────────────────────────────────────────────────
   val rootBehavior: Behavior[GuardianMsg] = Behaviors.setup { ctx =>
 
-    val simStart = SIM_DATE.atTime(SIM_START)
-    val simEnd   = SIM_DATE.atTime(SIM_END)
-
     // 1. Tour Libre (gauche) — ScheduleManager sans vérification Pétri
     val towerLibre = ctx.spawn(
       TowerControlActor(
-        runwayCount = RUNWAY_COUNT,
-        garageCount = GARAGE_COUNT,
+        runwayCount = cfg.runwayCount,
+        garageCount = cfg.garageCount,
         schedule    = schedule,
         simDate     = SIM_DATE,
         slot        = SimState.libre,
@@ -108,8 +83,8 @@ object Main extends App {
     // 2. Tour Contrôle (droite) — ScheduleManager avec vérification Pétri
     val towerControle = ctx.spawn(
       TowerControlActor(
-        runwayCount = RUNWAY_COUNT,
-        garageCount = GARAGE_COUNT,
+        runwayCount = cfg.runwayCount,
+        garageCount = cfg.garageCount,
         schedule    = schedule,
         simDate     = SIM_DATE,
         slot        = SimState.controle,

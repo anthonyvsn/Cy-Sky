@@ -3,7 +3,7 @@ package cysky
 import cysky.actors.TowerControlActor.TowerData
 import cysky.model.InjectedEvent
 import cysky.models.AircraftFlight
-import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
+import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 import java.util.concurrent.CountDownLatch
 
 // ═══════════════════════════════════════════════════════════════
@@ -34,10 +34,24 @@ class SimSlot(val name: String) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// SimConfig — paramètres saisis par l'utilisateur avant le lancement
+// ═══════════════════════════════════════════════════════════════
+case class SimConfig(
+  runwayCount:  Int,
+  garageCount:  Int,
+  maxAirplanes: Int,
+  seed:         Long,
+  startHour:    Int,
+  startMinute:  Int,
+  endHour:      Int,
+  endMinute:    Int
+)
+
+// ═══════════════════════════════════════════════════════════════
 // SimState — état partagé entre les deux simulations et le
 // serveur HTTP.
 //
-// Partagé : startLatch, isStarted, injectedEvents, scheduleRef
+// Partagé : configLatch, startLatch, isStarted, injectedEvents, scheduleRef
 // Par simulation : SimSlot (libre / controle)
 // ═══════════════════════════════════════════════════════════════
 object SimState {
@@ -50,6 +64,12 @@ object SimState {
   private val _started       = new AtomicReference[Boolean](false)
   private val injectedEvents = new AtomicReference[List[InjectedEvent]](List.empty)
   private val scheduleRef    = new AtomicReference[Map[String, List[AircraftFlight]]](Map.empty)
+
+  /** Décompté à 0 quand l'utilisateur valide la configuration */
+  val configLatch = new CountDownLatch(1)
+  private val configRef = new AtomicReference[Option[SimConfig]](None)
+  def setConfig(c: SimConfig): Unit = { configRef.set(Some(c)); configLatch.countDown() }
+  def getConfig: Option[SimConfig]  = configRef.get()
 
   /** Décompté à 0 quand l'utilisateur clique Start */
   val startLatch = new CountDownLatch(1)
@@ -71,4 +91,9 @@ object SimState {
 
   def setSchedule(s: Map[String, List[AircraftFlight]]): Unit = scheduleRef.set(s)
   def scheduleSnapshot: Map[String, List[AircraftFlight]]     = scheduleRef.get()
+
+  // ── Vitesse de simulation (partagée entre les deux horloges) ──
+  val tickIntervalMs: AtomicLong = new AtomicLong(112L)
+  def setTickInterval(ms: Long): Unit = tickIntervalMs.set(ms.max(10L).min(5000L))
+  def getTickInterval: Long            = tickIntervalMs.get()
 }

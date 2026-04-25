@@ -2,9 +2,11 @@ package cysky
 
 import com.sun.net.httpserver.{HttpExchange, HttpServer}
 import cysky.model.{EventType, InjectedEvent, UrgencyLevel}
-import cysky.models.{Arrival, Departure}
+import cysky.models.{Arrival, Departure, ScheduleGeneratorAlgorithm}
+import cysky.petri.PetriScheduleVerifier
 import java.net.{InetSocketAddress, URLDecoder}
 import java.nio.charset.StandardCharsets
+import java.time.{LocalTime}
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -15,11 +17,13 @@ object DashboardServer {
   def start(): Unit = {
     val server = HttpServer.create(new InetSocketAddress(8080), 0)
     server.createContext("/",                 exchange => handle(exchange, routeRoot))
+    server.createContext("/configure",        exchange => handle(exchange, routeConfigure))
     server.createContext("/start",            exchange => handle(exchange, routeStart))
     server.createContext("/schedule",         exchange => handle(exchange, routeSchedule))
     server.createContext("/add-event",        exchange => handle(exchange, routeAddEvent))
     server.createContext("/state/libre",      exchange => handle(exchange, routeStateLibre))
     server.createContext("/state/controle",   exchange => handle(exchange, routeStateControle))
+    server.createContext("/speed",            exchange => handle(exchange, routeSpeed))
     server.setExecutor(null)
     server.start()
   }
@@ -74,6 +78,66 @@ object DashboardServer {
     )
     SimState.addInjectedEvent(event)
     (200, "application/json", """{"ok":true}""")
+  }
+
+  // ── POST /configure ───────────────────────────────────────────
+  private def routeConfigure(ex: HttpExchange): (Int, String, String) = {
+    if (ex.getRequestMethod != "POST") return (405, "text/plain", "Method Not Allowed")
+    val raw    = new String(ex.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
+    val params = parseForm(raw)
+
+    def int(k: String, d: Int)  = params.get(k).flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(d)
+    def long(k: String, d: Long) = params.get(k).flatMap(s => scala.util.Try(s.toLong).toOption).getOrElse(d)
+
+    val runways  = int("runways",   3).max(1).min(10)
+    val garages  = int("garages",   6).max(1).min(20)
+    val planes   = int("planes",   15).max(5).min(50)
+    val seed     = long("seed",    42L)
+    val startH   = int("startHour", 6).max(0).min(23)
+    val startM   = int("startMin",  0).max(0).min(59)
+    val endH     = int("endHour",  23).max(0).min(23)
+    val endM     = int("endMin",   59).max(0).min(59)
+
+    try {
+      val schedule = ScheduleGeneratorAlgorithm.generate(
+        terminalId   = "T1",
+        runwayCount  = runways,
+        maxAirplanes = planes,
+        seed         = seed,
+        startTime    = LocalTime.of(startH, startM),
+        endTime      = LocalTime.of(endH,   endM)
+      )
+      SimState.setSchedule(schedule)
+      val flightCount = schedule.values.flatten.count(_.kind == Arrival)
+
+      val verif = PetriScheduleVerifier.verify(schedule, runways, garages)
+      println(verif.report)
+
+      if (!verif.valid) {
+        val msg = esc(verif.report.replaceAll("[\n\r]", " ").take(300))
+        return (200, "application/json; charset=UTF-8",
+          s"""{"ok":false,"error":"Planning invalide — essayez d'autres paramètres ou une autre graine","report":"$msg"}""")
+      }
+
+      SimState.setConfig(SimConfig(runways, garages, planes, seed, startH, startM, endH, endM))
+      (200, "application/json; charset=UTF-8",
+        s"""{"ok":true,"flights":$flightCount,"runways":$runways,"garages":$garages}""")
+
+    } catch {
+      case e: Exception =>
+        val msg = esc(Option(e.getMessage).getOrElse("Erreur inconnue").take(200))
+        (200, "application/json; charset=UTF-8",
+          s"""{"ok":false,"error":"Erreur lors de la génération : $msg"}""")
+    }
+  }
+
+  // ── POST /speed ───────────────────────────────────────────────
+  private def routeSpeed(ex: HttpExchange): (Int, String, String) = {
+    if (ex.getRequestMethod != "POST") return (405, "text/plain", "Method Not Allowed")
+    val raw    = new String(ex.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
+    val params = parseForm(raw)
+    params.get("ms").flatMap(s => scala.util.Try(s.toLong).toOption).foreach(SimState.setTickInterval)
+    (200, "application/json", s"""{"ok":true,"ms":${SimState.getTickInterval}}""")
   }
 
   // ── GET /state/libre ─────────────────────────────────────────
@@ -187,12 +251,23 @@ object DashboardServer {
 body{font-family:'Segoe UI',sans-serif;background:#0a0e17;color:#c8d8f0;min-height:100vh}
 
 /* ── Header ── */
-header{display:flex;align-items:center;justify-content:space-between;padding:18px 40px;border-bottom:1px solid #1e2d4a;background:#0d1220}
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 40px;border-bottom:1px solid #1e2d4a;background:#0d1220;gap:32px}
 .logo{font-size:22px;font-weight:700;letter-spacing:.1em;color:#f5a623}
 .logo-sub{font-size:10px;color:#4a6080;letter-spacing:.08em;margin-top:2px}
 .live-badge{display:flex;align-items:center;gap:6px;font-size:11px;font-family:monospace;color:#00e676}
 .live-dot{width:7px;height:7px;border-radius:50%;background:#00e676;animation:pulse 2s ease-in-out infinite}
 .live-dot.off{background:#4a6080;animation:none}
+/* ── Clock ── */
+.clock-box{display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0}
+.clock{font-size:28px;font-weight:700;font-family:monospace;color:#f5a623;letter-spacing:.06em}
+.clock-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#4a6080;margin-top:2px}
+/* ── Speed control ── */
+.speed-ctrl{display:flex;flex-direction:column;gap:5px;min-width:220px;flex:1;max-width:320px}
+.speed-top{display:flex;justify-content:space-between;align-items:center}
+.speed-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#4a6080}
+.speed-value{font-size:13px;font-weight:700;font-family:monospace;color:#f5a623}
+.speed-slider{width:100%;height:4px;accent-color:#f5a623;cursor:pointer;background:transparent}
+.speed-ticks{display:flex;justify-content:space-between;font-size:9px;color:#2a3a4a;margin-top:1px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @keyframes boom-flash{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.05)}}
 
@@ -323,11 +398,23 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 
   <header>
     <div>
-      <h1>&#9992; CySky &mdash; Live Dashboard</h1>
-      <p>
+      <div class="logo">&#9992; CySky</div>
+      <div class="logo-sub">Live Dashboard</div>
+      <p style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;font-family:monospace;color:#00e676">
         <span id="live-dot" class="live-dot off"></span>
         <span id="live-label">En attente de demarrage...</span>
       </p>
+    </div>
+    <div class="speed-ctrl">
+      <div class="speed-top">
+        <span class="speed-title">Vitesse de simulation</span>
+        <span class="speed-value" id="speed-label">1.0x</span>
+      </div>
+      <input type="range" class="speed-slider" id="speed-slider"
+        min="0" max="200" step="1" value="100"
+        oninput="onSpeedChange(this.value)"
+        onchange="applySpeed(this.value)">
+      <div class="speed-ticks"><span>Lent</span><span>Rapide</span></div>
     </div>
     <div class="clock-box">
       <div id="sim-clock" class="clock">--:--</div>
@@ -335,7 +422,59 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
     </div>
   </header>
 
-  <div id="pre-sim" class="page">
+  <!-- ═══ ÉCRAN 1 : CONFIGURATION ═══ -->
+  <div id="config-screen" class="page">
+    <div class="section-title">Paramètres de la simulation</div>
+    <div class="form-card">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px 20px;margin-bottom:20px">
+
+        <div class="field">
+          <label>Nombre de pistes</label>
+          <input type="number" id="cfg-runways" min="1" max="10" value="3">
+        </div>
+        <div class="field">
+          <label>Nombre de garages</label>
+          <input type="number" id="cfg-garages" min="1" max="20" value="6">
+        </div>
+        <div class="field">
+          <label>Avions simultanés max</label>
+          <input type="number" id="cfg-planes" min="5" max="50" value="15">
+        </div>
+
+        <div class="field">
+          <label>Heure de début</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <input type="number" id="cfg-start-h" min="0" max="23" value="6" style="width:64px">
+            <span style="color:#4a6080;font-size:16px;font-family:monospace">:</span>
+            <input type="number" id="cfg-start-m" min="0" max="59" value="0" style="width:64px">
+          </div>
+        </div>
+        <div class="field">
+          <label>Heure de fin</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <input type="number" id="cfg-end-h" min="0" max="23" value="23" style="width:64px">
+            <span style="color:#4a6080;font-size:16px;font-family:monospace">:</span>
+            <input type="number" id="cfg-end-m" min="0" max="59" value="59" style="width:64px">
+          </div>
+        </div>
+        <div class="field">
+          <label>Graine aléatoire</label>
+          <div style="display:flex;gap:6px">
+            <input type="number" id="cfg-seed" value="42" style="flex:1">
+            <button class="btn-add" onclick="randomSeed()" style="padding:8px 12px;font-size:13px" title="Graine aléatoire">&#x1F3B2;</button>
+          </div>
+        </div>
+
+      </div>
+      <div id="config-result" style="display:none;margin-bottom:16px"></div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn-start" id="btn-configure" onclick="configure()">&#9654; Générer l'emploi du temps</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ ÉCRAN 2 : PRÉ-SIMULATION ═══ -->
+  <div id="pre-sim" class="page" style="display:none">
   <!-- Ecran Start -->
   <div id="start-screen">
     <p>La simulation est prête.<br>Cliquez sur Start pour lancer la journée à l'aéroport.</p>
@@ -460,6 +599,79 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 
 <script>
 var scheduleData = {flights:[], events:[]};
+var currentTickMs = 112;
+
+// ── Configuration initiale ───────────────────────────────────────
+function randomSeed() {
+  document.getElementById('cfg-seed').value = Math.floor(Math.random() * 999999);
+}
+
+function configure() {
+  var btn = document.getElementById('btn-configure');
+  btn.disabled = true;
+  btn.textContent = 'Génération en cours...';
+  document.getElementById('config-result').style.display = 'none';
+
+  var body = [
+    'runways='   + encodeURIComponent(document.getElementById('cfg-runways').value),
+    'garages='   + encodeURIComponent(document.getElementById('cfg-garages').value),
+    'planes='    + encodeURIComponent(document.getElementById('cfg-planes').value),
+    'seed='      + encodeURIComponent(document.getElementById('cfg-seed').value),
+    'startHour=' + encodeURIComponent(document.getElementById('cfg-start-h').value),
+    'startMin='  + encodeURIComponent(document.getElementById('cfg-start-m').value),
+    'endHour='   + encodeURIComponent(document.getElementById('cfg-end-h').value),
+    'endMin='    + encodeURIComponent(document.getElementById('cfg-end-m').value)
+  ].join('&');
+
+  fetch('/configure', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: body})
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+      var resEl = document.getElementById('config-result');
+      resEl.style.display = 'block';
+      if (data.ok) {
+        resEl.innerHTML =
+          '<div style="color:#00e676;font-size:12px;padding:10px 14px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);border-radius:4px">' +
+          '&#10003; Planning généré — ' + data.flights + ' vol(s), ' + data.runways + ' piste(s), ' + data.garages + ' garage(s)' +
+          '</div>';
+        setTimeout(function() {
+          document.getElementById('config-screen').style.display = 'none';
+          document.getElementById('pre-sim').style.display = 'block';
+          loadSchedule();
+        }, 800);
+      } else {
+        resEl.innerHTML =
+          '<div style="color:#ff5252;font-size:12px;padding:10px 14px;background:rgba(255,82,82,.06);border:1px solid rgba(255,82,82,.2);border-radius:4px">' +
+          '&#10007; ' + (data.error || 'Erreur inconnue') +
+          '</div>';
+        btn.disabled = false;
+        btn.textContent = '\u25B6 Générer l\'emploi du temps';
+      }
+    })
+    .catch(function() {
+      var resEl = document.getElementById('config-result');
+      resEl.style.display = 'block';
+      resEl.innerHTML = '<div style="color:#ff9800;font-size:12px">Erreur de connexion au serveur</div>';
+      btn.disabled = false;
+      btn.textContent = '\u25B6 Générer l\'emploi du temps';
+    });
+}
+
+function sliderToMs(val) {
+  // Échelle log : val=0 → 224ms (0.5x) | val=100 → 112ms (1x) | val=200 → 56ms (2x)
+  return Math.round(112 * Math.pow(2, (100 - parseInt(val)) / 100));
+}
+
+function onSpeedChange(val) {
+  var ms = sliderToMs(val);
+  document.getElementById('speed-label').textContent = (112/ms).toFixed(1) + 'x';
+}
+
+function applySpeed(val) {
+  var ms = sliderToMs(val);
+  currentTickMs = ms;
+  document.getElementById('speed-label').textContent = (112/ms).toFixed(1) + 'x';
+  fetch('/speed', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: 'ms=' + ms});
+}
 
 // ── Couleurs événements ──────────────────────────────────────────
 var EVT_COLORS = {
@@ -701,9 +913,9 @@ function pollState() {
       document.getElementById('live-dot').className     = 'live-dot off';
       document.getElementById('live-label').textContent = 'Simulations terminées';
     } else {
-      setTimeout(pollState, 1000);
+      setTimeout(pollState, Math.max(50, Math.min(currentTickMs, 1000)));
     }
-  }).catch(function(){ setTimeout(pollState, 1000); });
+  }).catch(function(){ setTimeout(pollState, Math.max(50, Math.min(currentTickMs, 1000))); });
 }
 
 function stat(label, val, cls) {
