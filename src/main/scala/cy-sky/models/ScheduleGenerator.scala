@@ -71,33 +71,32 @@ class ScheduleGenerator private (
     val runwayIds = (1 to runways).map(i => s"RWY_$i").toVector
     val gateIds   = (1 to garages).map(j => s"GATE_$j").toVector
 
-    var gateCounter   = 0
-    var flightCounter = 0
-
-    val allFlights = runwayIds.toList.flatMap { runwayId =>
-      var currentMin = startMin
-      var acc        = List.empty[Flight]
-
-      while (currentMin + minCycle <= endMin) {
-        flightCounter += 1
-        val idx = flightCounter
-
+    // Génère les vols d'une piste, thread l'état (flightC, gateC) entre appels.
+    // Retourne (vols générés, flightC final, gateC final).
+    @scala.annotation.tailrec
+    def loopRunway(
+      currentMin: Int,
+      flightC:    Int,
+      gateC:      Int,
+      runwayId:   String,
+      acc:        List[Flight]
+    ): (List[Flight], Int, Int) =
+      if (currentMin + minCycle > endMin) (acc, flightC, gateC)
+      else {
+        val idx      = flightC + 1
         val arrMin   = currentMin
         val boardMin = arrMin + Landing.durationMinutes + TaxiToGarage.durationMinutes
-
         val baseStay = TaxiToGarage.durationMinutes + Boarding.durationMinutes + TaxiToRunway.durationMinutes
-        val maxExtra = Math.min(maxGroundStayMinutes - baseStay,
-                                endMin - arrMin - minCycle).max(0)
+        val maxExtra = Math.min(maxGroundStayMinutes - baseStay, endMin - arrMin - minCycle).max(0)
         val extra    = if (maxExtra > 0) rng.nextInt(maxExtra) else 0
-
-        val depMin = boardMin + Boarding.durationMinutes + TaxiToRunway.durationMinutes + extra
+        val depMin   = boardMin + Boarding.durationMinutes + TaxiToRunway.durationMinutes + extra
+        val jitter   = rng.nextInt(10)
+        val nextMin  = depMin + Takeoff.durationMinutes + jitter
 
         if (depMin + Takeoff.durationMinutes <= endMin) {
-          val gate   = gateIds(gateCounter % garages)
-          gateCounter += 1
+          val gate   = gateIds(gateC % garages)
           val depRwy = runwayIds(rng.nextInt(runways))
-
-          acc = acc :+ Flight(
+          val flight = Flight(
             flightId        = f"FL${idx}%04d",
             airplaneId      = s"AC_${runwayId}_$idx",
             arrivalTime     = toTime(arrMin),
@@ -108,13 +107,17 @@ class ScheduleGenerator private (
             boardingTime    = toTime(boardMin),
             gateId          = gate
           )
+          loopRunway(nextMin, idx, gateC + 1, runwayId, acc :+ flight)
+        } else {
+          loopRunway(nextMin, idx, gateC, runwayId, acc)
         }
-
-        val jitter = rng.nextInt(10)
-        currentMin = depMin + Takeoff.durationMinutes + jitter
       }
 
-      acc
+    // Fold sur les pistes pour thread l'état (gateC, flightC, accVols) entre pistes
+    val (_, _, allFlights) = runwayIds.foldLeft((0, 0, List.empty[Flight])) {
+      case ((gateC, flightC, acc), runwayId) =>
+        val (flights, newFlightC, newGateC) = loopRunway(startMin, flightC, gateC, runwayId, Nil)
+        (newGateC, newFlightC, acc ++ flights)
     }
 
     val sorted   = allFlights.sortBy(f => toMin(f.arrivalTime))

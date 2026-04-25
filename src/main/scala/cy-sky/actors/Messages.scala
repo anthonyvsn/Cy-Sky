@@ -2,6 +2,7 @@ package cysky.protocol
 
 import akka.actor.typed.ActorRef
 import cysky.model._
+import cysky.models.AircraftFlight
 import java.time.LocalDateTime
 
 // ═══════════════════════════════════════════════════════════════
@@ -90,6 +91,37 @@ object ControlTowerCommand {
 
   /** Le ScheduleManager envoie un nouveau plan optimisé */
   final case class RescheduleFlights(newPlan: List[FlightData])
+    extends ControlTowerCommand
+
+  /** Le ScheduleManager a ajouté un nouveau vol — schedule mis à jour */
+  final case class FlightAddedByManager(newSchedule: Map[String, List[AircraftFlight]])
+    extends ControlTowerCommand
+
+  /** Vol(s) annulé(s) par le ScheduleManager (Mode Contrôle, impossible à placer).
+   *  cancelled    : vols à afficher avec le statut "Annulé" (ne sont PAS dans newSchedule).
+   *  newSchedule  : schedule mis à jour (contient l'arrivée si seul le départ est annulé). */
+  final case class FlightCancelledByManager(
+    cancelled:   List[AircraftFlight],
+    newSchedule: Map[String, List[AircraftFlight]]
+  ) extends ControlTowerCommand
+
+  // ── Commandes BOOM — déclenchées par le réseau de Pétri ────────
+
+  /** Conflit piste (atterrissage) : BOOM pour les avions concernés
+   *  + annulation de tous les vols sur cette piste.
+   *  smFlights = vols du SM plane rejeté (à ajouter au schedule pour l'affichage). */
+  final case class BoomRunway(runway: String, boomPlanes: List[String], smFlights: List[AircraftFlight] = Nil)
+    extends ControlTowerCommand
+
+  /** Conflit taxi (départ) : BOOM pour les avions concernés
+   *  + annulation de tous les avions utilisant cette voie de taxi.
+   *  smFlights = vols du SM plane rejeté. */
+  final case class BoomTaxi(runway: String, boomPlanes: List[String], smFlights: List[AircraftFlight] = Nil)
+    extends ControlTowerCommand
+
+  /** Débordement garage : annulation de TOUS les avions de l'aéroport.
+   *  smFlights = vols du SM plane rejeté. */
+  final case class BoomGarage(boomPlanes: List[String], smFlights: List[AircraftFlight] = Nil)
     extends ControlTowerCommand
 
   /** Retarder un vol spécifique */
@@ -202,6 +234,26 @@ object PetriNetCommand {
     formula: String,
     replyTo: ActorRef[PetriNetReply]
   ) extends PetriNetCommand
+}
+
+// ───────────────────────────────────────────────────────────────
+// Messages du ScheduleManagerActor
+// ───────────────────────────────────────────────────────────────
+sealed trait ScheduleManagerCommand
+
+object ScheduleManagerCommand {
+
+  /** La TowerControl envoie ce message 30 min simulées avant un événement.
+   *  arrivalHour / arrivalMinute = heure cible saisie dans le formulaire
+   *  (= heure d'arrivée souhaitée du nouveau vol).
+   *  urgencyLevel = niveau d'urgence hérité de l'InjectedEvent (Emergency → priorité absolue). */
+  final case class PrepareNewFlight(
+    triggeringEventId: String,
+    simTime:           LocalDateTime,
+    arrivalHour:       Int,
+    arrivalMinute:     Int,
+    urgencyLevel:      cysky.model.UrgencyLevel = cysky.model.UrgencyLevel.Commercial
+  ) extends ScheduleManagerCommand
 }
 
 sealed trait PetriNetReply

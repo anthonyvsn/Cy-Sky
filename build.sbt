@@ -6,6 +6,7 @@ val AkkaVersion = "2.7.0"
 lazy val root = (project in file("."))
   .settings(
     name := "CY_airsim",
+    Compile / mainClass := Some("cysky.Main"),
     libraryDependencies ++= Seq(
       "com.typesafe.akka" %% "akka-actor-typed"         % AkkaVersion,
       "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test,

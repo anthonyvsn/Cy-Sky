@@ -41,7 +41,7 @@ object ScheduleGeneratorAlgorithm {
     def candidates: LazyList[Int] = LazyList.unfold(startMin) { cur =>
       val jitter = rng.nextInt(10)
       val next   = cur + cycleMin + jitter
-      Option.when(next + cycleMin <= endMin)(cur + jitter, next)
+      Option.when(next <= endMin)(cur + jitter, next)
     }
 
     // Pour chaque piste, on place les vols en vérifiant les 2 contraintes
