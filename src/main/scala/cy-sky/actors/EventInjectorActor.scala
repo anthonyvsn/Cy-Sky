@@ -11,33 +11,44 @@ import cysky.protocol.ControlTowerCommand.{
 }
 import java.time.LocalDateTime
 
-// ═══════════════════════════════════════════════════════════════
-// EventInjectorActor — point d'entrée des contraintes dynamiques
-//
-// Rôle :
-//   Reçoit les événements créés depuis le front (urgences, fermetures
-//   de piste, retards…) et les déclenche 30 MINUTES AVANT l'heure
-//   simulée cible, permettant à la TowerControl de réagir à l'avance.
-//
-// Logique de déclenchement :
-//   Sur chaque Tick(simTime), l'acteur cherche les événements dont
-//   (targetTime − 30 min) == simTime. À ce moment, il envoie le
-//   message approprié à la TowerControl et marque l'événement
-//   "triggered" dans SimState.
-//
-// Types d'événements gérés :
-//   EmergencyArrival    → InjectEmergencyArrival (TowerControl spawne l'avion)
-//   RunwayClosure       → InjectRunwayClosure     (TowerControl ferme piste aléatoire)
-//   FlightDelay         → DelayFlight             (TowerControl retarde un vol aléatoire)
-//   FlightCancellation  → CancelFlight            (TowerControl annule un vol aléatoire)
-// ═══════════════════════════════════════════════════════════════
-object EventInjectorActor {
+/***
+ * Gestion des événements créés depuis le front.
+ *
+ * Rôle :
+ *   Recoit les événements créés depuis le front (urgences, fermetures de piste, retards ...) et les déclenche 30 minutes avant l'heure
+ *   simulée (permet à la TowerControl de réagir à l'avance).
+ *
+ * Logique de déclenchement :
+ *   Sur chaque Tick(simTime), l'acteur cherche les événements dont (targetTime − 30 min) == simTime. À ce moment, il envoie le
+ *   message approprié à la TowerControl et marque l'événement "triggered" dans SimState.
+ *
+ * Types d'événements gérés :
+ *   EmergencyArrival    -> InjectEmergencyArrival  (TowerControl spawne l'avion)
+ *   RunwayClosure       -> InjectRunwayClosure     (TowerControl ferme piste aléatoire)
+ *   FlightDelay         -> DelayFlight             (TowerControl retarde un vol aléatoire)
+ *   FlightCancellation  -> CancelFlight            (TowerControl annule un vol aléatoire)
+ */
+object EventInjectorActor {   // object : singleton (1 seule instance possible). C'est comme "static class" en java.
 
+  /***
+   * Methode de lancement de [[EventInjectorActor]]
+   * 
+   * @param towerRef
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[ControlTowerCommand]].
+   */
   def apply(
     towerRef: ActorRef[ControlTowerCommand]
   ): Behavior[EventInjectorCommand] =
     running(towerRef, pendingEvents = List.empty)
 
+  /***
+   * Méthode principale de gestion des événement injectés.
+   * 
+   * 
+   * @param towerRef
+   * @param pendingEvents   liste des événements injectés
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[EventInjectorCommand]].
+   */
   private def running(
     towerRef:      ActorRef[ControlTowerCommand],
     pendingEvents: List[InjectedEvent]
@@ -58,8 +69,7 @@ object EventInjectorActor {
 
         // ── Tick de l'horloge simulée ─────────────────────────────
         case Tick(simTime) =>
-          // Chercher les événements dont le déclenchement (targetTime − 30 min)
-          // correspond au simTime courant.
+          // Chercher les événements dont le déclenchement (targetTime − 30 min) correspond au simTime courant.
           val toTrigger = pendingEvents.filter { e =>
             e.status == "pending" && isTriggerTime(e, simTime)
           }
@@ -85,9 +95,13 @@ object EventInjectorActor {
       }
     }
 
-  // ─────────────────────────────────────────────
-  // Vérifie si simTime correspond à (targetTime − 30 min)
-  // ─────────────────────────────────────────────
+  /***
+   * Vérifie si simTime = targetTime − 30 min
+   * 
+   * @param e         événement injecté
+   * @param simTime   horaire de la simulation en cours
+   * @return true si simTime = targetTime − 30 min
+   */
   private def isTriggerTime(e: InjectedEvent, simTime: LocalDateTime): Boolean = {
     // Construire le datetime cible puis soustraire 30 min
     val targetDt  = simTime.toLocalDate.atTime(e.targetHour, e.targetMinute)
@@ -96,9 +110,14 @@ object EventInjectorActor {
     simTime.getMinute == triggerDt.getMinute
   }
 
-  // ─────────────────────────────────────────────
-  // Dispatcher — envoie le message adapté selon le type d'événement
-  // ─────────────────────────────────────────────
+  /***
+   * Envoie un message a la TowerControl pour l'informer de l'action à effectuer en fonction du type de l'événement.
+   * 
+   * @param towerRef
+   * @param e         événement injecté
+   * @param simTime   horaire de la simulation en cours
+   * @return le type de l'événement.
+   */
   private def dispatchEvent(
     towerRef: ActorRef[ControlTowerCommand],
     e:        InjectedEvent,

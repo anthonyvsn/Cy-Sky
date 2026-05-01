@@ -9,12 +9,15 @@ import cysky.protocol.ControlTowerCommand.RunwayFreed
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-// ═══════════════════════════════════════════════════════════════
-// RunwayActor — Akka Typed, style fonctionnel pur
-//
-// Machine à états stricte : un seul avion par piste à la fois.
-// Correspond aux places P_runway_* dans le réseau de Pétri.
-// ═══════════════════════════════════════════════════════════════
+/***
+ * Classe des pistes de l'aéroport (Akka Typed).
+ * 
+ * Machine à états stricte : un seul avion par piste à la fois.
+ * => Correspond aux places P_runway_* dans le réseau de Pétri.
+ * 
+ * A noter : Cette classe est un singleton (1 seule instance possible).
+ *           C'est comme "static class" en java.
+ */
 object RunwayActor {
 
   // ─────────────────────────────────────────────
@@ -23,6 +26,21 @@ object RunwayActor {
   private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
   private def fmt(t: LocalDateTime): String = t.format(HHmm)
 
+
+  /***
+   * Données de la piste.
+   * 
+   * @param runwayId          id
+   * @param state             état de la piste (Free, Landing, TakeOffInProgress, ...)
+   * @param occupiedBy        id de l'avion occupant la piste (valeur optionnelle, peut etre présente ou absente)
+   * @param towerRef
+   * @param landingDurationMin  temps d'atterrissage minimal
+   * @param takeoffDurationMin  temps de décollage minimal
+   * @param taxiDurationMin     temps minimal pour aller au garage
+   * @param totalUsageMinutes
+   * @param occupiedSince       moment à partir duquel la piste est occupée (valeur optionnelle, peut etre présente ou absente)
+   * @param simTime             temps courant de la simulation
+   */
   final case class RunwayData(
     runwayId:          String,
     state:             RunwayState,
@@ -45,9 +63,15 @@ object RunwayActor {
       else totalUsageMinutes.toFloat / totalSimMinutes.toFloat
   }
 
-  // ─────────────────────────────────────────────
-  // Point d'entrée
-  // ─────────────────────────────────────────────
+
+  /***
+   * Initialise la piste comme étant vide.
+   * Etat initial en début de simulation.
+   * 
+   * @param runwayId id de la piste
+   * @param towerRef
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[RunwayCommand]].
+   */
   def apply(
     runwayId: String,
     towerRef: ActorRef[ControlTowerCommand]

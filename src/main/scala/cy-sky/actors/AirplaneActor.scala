@@ -9,21 +9,32 @@ import cysky.protocol.ControlTowerCommand.{RequestLanding, RequestTakeoff, Emerg
 import cysky.protocol.GarageCommand
 import java.time.LocalDateTime
 
-// ═══════════════════════════════════════════════════════════════
-// AirplaneActor — Akka Typed, style fonctionnel pur
-//
-// Principes FP appliqués :
-//   - Aucune mutation : chaque état est une nouvelle instance
-//   - Behavior[A] est une fonction : Command => Behavior[A]
-//   - Les données sont immuables (case class)
-//   - Le changement d'état = Behaviors.receive retournant un nouveau Behavior
-// ═══════════════════════════════════════════════════════════════
-object AirplaneActor {
-
-  // ─────────────────────────────────────────────
-  // État interne immuable de l'acteur
-  // Chaque champ correspond à un attribut du diagramme UML
-  // ─────────────────────────────────────────────
+/***
+ * AirplaneActor — Akka Typed, style fonctionnel pur
+ *
+ * Principes FP appliqués :
+ *   - Aucune mutation : chaque état est une nouvelle instance
+ *   - Behavior[A] est une fonction : Command => Behavior[A]
+ *   - Les données sont immuables (case class)
+ *   - Le changement d'état = Behaviors.receive retournant un nouveau Behavior
+*/
+object AirplaneActor {    // object : singleton (1 seule instance possible). C'est comme "static class" en java.
+  
+  /***
+   * Contient les données liées à l'avion.
+   * État interne immuable de l'acteur.
+   * Chaque champ correspond à un attribut du diagramme UML.
+   * 
+   * @param airplaneId    est l'id de l'avion
+   * @param flightNumber  est le numero de vol
+   * @param urgencyLevel  est le niveau de priorité de l'avion pour aterrir
+   * @param state         correspond à l'état de l'avion (en vol, sur piste, en garage,...)
+   * @param assignedRunwayId  est la piste assignée à l'avion pour aterrir.
+   * @param assignedGarageId  est le garage assigné à l'avion.
+   * @param scheduledArrival  horaire d'arrivée
+   * @param scheduledDepart   horaire de départ
+   * @param towerRef          
+   */
   final case class AirplaneData(
     airplaneId:       String,
     flightNumber:     String,
@@ -46,12 +57,15 @@ object AirplaneActor {
     def withGarage(id: Option[String]):       AirplaneData = copy(assignedGarageId = id)
   }
 
-  // ─────────────────────────────────────────────
-  // Point d'entrée : factory method
-  // Crée l'acteur en état InFlight et envoie immédiatement
-  // une demande d'atterrissage à la ControlTower
-  // ─────────────────────────────────────────────
-  def apply(flight: FlightData, towerRef: ActorRef[ControlTowerCommand]): Behavior[AirplaneCommand] =
+  /***
+   * Crée l'acteur en état InFlight et envoie immédiatement une demande d'atterrissage à la ControlTower.
+   * Méthode principale (factory method).
+   * 
+   * @param flight  contient les données du vol.
+   * @param ControlTower contient les messages de la ControlTower.
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[AirplaneCommand]].
+   */
+  def apply(flight: FlightData, tower : chaque Ref: ActorRef[ControlTowerCommand]): Behavior[AirplaneCommand] =
     Behaviors.setup { ctx =>
       val data = AirplaneData(
         airplaneId       = flight.airplaneId,
@@ -69,9 +83,13 @@ object AirplaneActor {
       inFlight(data)
     }
 
-  // ─────────────────────────────────────────────
-  // État : InFlight — en approche, attend autorisation
-  // ─────────────────────────────────────────────
+  /***
+   * L'état "InFlight" dit que l'avion est en approche.
+   * Il attend l'autorisation de pouvoir aterrir.
+   * 
+   * @param data contient les données de l'avion.
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[AirplaneCommand]].
+   */
   private def inFlight(data: AirplaneData): Behavior[AirplaneCommand] =
     Behaviors.receiveMessage {
 
@@ -89,10 +107,13 @@ object AirplaneActor {
       case Tick(_) => inFlight(data) // pas de transition sur tick en InFlight
     }
 
-  // ─────────────────────────────────────────────
-  // État : Landing — atterrissage en cours
-  // La transition se fait automatiquement après la durée simulée
-  // ─────────────────────────────────────────────
+  /***
+   * L'état "Landing" dit que l'avion est en cours d'atterrissage.
+   * La transition se fait automatiquement après la durée simulée.
+   * 
+   * @param data contient les données de l'avion.
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[AirplaneCommand]].
+   */
   private def landing(data: AirplaneData): Behavior[AirplaneCommand] =
     Behaviors.receiveMessage {
 
@@ -113,10 +134,14 @@ object AirplaneActor {
         Behaviors.unhandled
     }
 
-  // ─────────────────────────────────────────────
-  // État : Taxiing — quitte la piste vers le garage
-  // La piste est déjà libérée (RunwayFreed envoyé)
-  // ─────────────────────────────────────────────
+  /***
+   * L'état "Taxiing" dit que l'avion quitte la pîste vers le garage.
+   * La piste est déjà libérée (RunwayFreed envoyé).
+   * 
+   * @param data contient les données de l'avion.
+   * @param garageRef est utilisé pour communiquer des messages liés au garage à la [[ControlTower]].
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[AirplaneCommand]].
+   */
   private def taxiing(data: AirplaneData, garageRef: ActorRef[GarageCommand]): Behavior[AirplaneCommand] =
     Behaviors.receiveMessage {
 
@@ -132,10 +157,14 @@ object AirplaneActor {
       case _ => Behaviors.unhandled
     }
 
-  // ─────────────────────────────────────────────
-  // État : Parked — garé, embarquement / ravitaillement
-  // Attend que groundDuration soit écoulée pour demander le décollage
-  // ─────────────────────────────────────────────
+  /***
+   * L'état "Parked" dit que l'avion est garé (/embarquement/ravitaillement).
+   * Attend que groundDuration soit écoulée pour demander le décollage
+   * 
+   * @param data contient les données de l'avion.
+   * @param garageRef est utilisé pour communiquer des messages liés au garage à la [[ControlTower]]. (ex: avion quitte le garage)
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[AirplaneCommand]].
+   */
   private def parked(data: AirplaneData, garageRef: ActorRef[GarageCommand]): Behavior[AirplaneCommand] =
     Behaviors.receiveMessage {
 
@@ -161,14 +190,17 @@ object AirplaneActor {
       case _ => Behaviors.unhandled
     }
 
-  // ─────────────────────────────────────────────
-  // État : TaxiOut — rejoint la piste de décollage
-  // ─────────────────────────────────────────────
-  // requestSent évite de renvoyer la demande à chaque Tick
+  /***
+   * L'état "TaxiOut" dit que l'avion rejoint la piste pour décoller.
+   * Attend que groundDuration soit écoulée pour demander le décollage
+   * 
+   * @param data contient les données de l'avion.
+   * @param requestSent évite de renvoyer la demande à chaque Tick.
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[AirplaneCommand]].
+   */
   private def taxiOut(data: AirplaneData, requestSent: Boolean = false): Behavior[AirplaneCommand] =
     Behaviors.receive { (ctx, msg) =>
       msg match {
-
         case TakeoffAuthorized(runwayId) =>
           val next = data.withState(AirplaneState.Takeoff).withRunway(Some(runwayId))
           takeoff(next)
@@ -187,18 +219,26 @@ object AirplaneActor {
       }
     }
 
-  // ─────────────────────────────────────────────
-  // État : Takeoff — décollage en cours
-  // ─────────────────────────────────────────────
+   /***
+   * L'état "TakeOff" désigne le décollage en cours de l'avion.
+   * 
+   * @param data contient les données de l'avion.
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[AirplaneCommand]].
+   */
   private def takeoff(data: AirplaneData): Behavior[AirplaneCommand] =
     Behaviors.receiveMessage {
       case Tick(_) => takeoff(data)
       case _       => Behaviors.unhandled
     }
 
-  // ─────────────────────────────────────────────
-  // Helpers privés — actions sans effet de bord sur l'état
-  // ─────────────────────────────────────────────
+  /***
+   * Envoie un message à ControlTower pour effectuer une demande d'atterrissage avec niveau d'urgance approprié.
+   * Helpers privés — actions sans effet de bord sur l'état.
+   * 
+   * @param ctx désigne le contexte de l'avion.
+   * @param data contient les données de l'avion.
+   * @return
+   */
   private def requestLanding(
     ctx:  ActorContext[AirplaneCommand],
     data: AirplaneData

@@ -4,20 +4,21 @@ import akka.actor.typed.ActorRef
 import cysky.model._
 import java.time.LocalDateTime
 
-// ═══════════════════════════════════════════════════════════════
-// PROTOCOLE AKKA TYPED — CySky
-//
+
 // Convention de nommage :
 //   - Les traits sealed définissent le type de message d'un acteur
 //   - Chaque case class/object est un message précis
 //   - Les ActorRef dans les messages permettent le pattern ask / tell
-// ═══════════════════════════════════════════════════════════════
 
-// ───────────────────────────────────────────────────────────────
-// Messages de l'AirplaneActor
-// ───────────────────────────────────────────────────────────────
+/***
+ * Messages de [[AirplaneActor]].
+ * Les messages sont définis dans l'object lié [[AirplaneCommand]].
+ */
 sealed trait AirplaneCommand
 
+/***
+ * Messages pouvant être envoyés à l'avion.
+ */
 object AirplaneCommand {
 
   /** La ControlTower autorise l'atterrissage sur la piste donnée */
@@ -40,7 +41,7 @@ object AirplaneCommand {
 
   /**
    * La ControlTower indique à l'avion de rouler vers le garage assigné.
-   * Déclenche la transition Landing → Taxiing dans l'AirplaneActor.
+   * Déclenche la transition Landing -> Taxiing dans [[AirplaneActor]].
    */
   final case class TaxiToGarage(garageRef: ActorRef[GarageCommand])
     extends AirplaneCommand
@@ -50,11 +51,17 @@ object AirplaneCommand {
     extends AirplaneCommand
 }
 
-// ───────────────────────────────────────────────────────────────
-// Messages de la ControlTower (envoyés PAR l'avion)
-// ───────────────────────────────────────────────────────────────
+
+
+/***
+ * Messages de [[ControlTower]] (envoyés par l'avion).
+ * Les messages sont définis dans l'object lié [[ControlTowerCommand]].
+ */
 sealed trait ControlTowerCommand
 
+/***
+ * Messages pouvant etre recus par [[ControlTowerCommand]].
+ */
 object ControlTowerCommand {
 
   /** Demande d'atterrissage standard */
@@ -72,8 +79,7 @@ object ControlTowerCommand {
 
   /**
    * Atterrissage d'urgence — injecté par EventInjector.
-   * Arc inhibiteur Pétri : bloque toutes les T_land standards
-   * tant que ce message n'est pas traité.
+   * Arc inhibiteur Pétri : bloque toutes les T_land standards tant que ce message n'est pas traité.
    */
   final case class EmergencyLand(
     airplaneId: String,
@@ -112,11 +118,17 @@ object ControlTowerCommand {
     extends ControlTowerCommand
 }
 
-// ───────────────────────────────────────────────────────────────
-// Messages du RunwayActor
-// ───────────────────────────────────────────────────────────────
+
+
+/***
+ * Messages du [[RunwayActor]].
+ * Les messages sont définis dans l'object lié [[RunwayCommand]].
+ */
 sealed trait RunwayCommand
 
+/***
+ * Messages pouvant etre envoyés par la [[ControlTower]] aux [[RunwayActor]].
+ */
 object RunwayCommand {
 
   /** Ordre d'atterrissage depuis la ControlTower */
@@ -147,11 +159,16 @@ object RunwayCommand {
   final case class Tick(simulatedTime: LocalDateTime) extends RunwayCommand
 }
 
-// ───────────────────────────────────────────────────────────────
-// Messages du GarageActor
-// ───────────────────────────────────────────────────────────────
+
+/***
+ * Messages du [[GarageActor]].
+ * Les messages sont définis dans l'object lié [[GarageCommand]].
+ */
 sealed trait GarageCommand
 
+/***
+ * Messages pouvant etre envoyés par la [[ControlTower]] ou [[AirplaneActor]] au [[GarageActor]].
+ */
 object GarageCommand {
 
   /** Demande de stationnement depuis la ControlTower */
@@ -170,9 +187,12 @@ object GarageCommand {
   final case class Tick(simulatedTime: LocalDateTime) extends GarageCommand
 }
 
-// ───────────────────────────────────────────────────────────────
-// Messages du PetriNetEngine
-// ───────────────────────────────────────────────────────────────
+
+
+/***
+ * Messages de [[PetriNetEngine]].
+ * Les messages sont définis dans l'object lié [[PetriNetCommand]].
+ */
 sealed trait PetriNetCommand
 
 object PetriNetCommand {
@@ -215,8 +235,15 @@ object PetriNetReply {
 // ───────────────────────────────────────────────────────────────
 // Messages de l'EventInjectorActor
 // ───────────────────────────────────────────────────────────────
+/***
+ * Messages de [[EventInjectorActor]].
+ * Les messages sont définis dans l'object lié [[EventInjectorCommand]].
+ */
 sealed trait EventInjectorCommand
 
+/***
+ * Messages liés à l'ajout d'événements de la classe [[EventInjectorActor]].
+ */
 object EventInjectorCommand {
   import cysky.model.InjectedEvent
 
