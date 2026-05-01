@@ -10,10 +10,30 @@ import java.time.{LocalTime}
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
+/***
+ * Serveur HTTP embarqué qui expose le dashboard de la simulation.
+ *
+ * Rôle :
+ *   Lance un serveur HTTP sur le port 8080 et sert une page web permettant de configurer,
+ *   démarrer et visualiser la simulation en temps réel.
+ *
+ * Routes exposées :
+ *   GET  /               -> page HTML du dashboard
+ *   POST /configure      -> génère l'emploi du temps avec les paramètres fournis
+ *   POST /start          -> démarre la simulation
+ *   GET  /schedule       -> retourne le planning et les événements au format JSON
+ *   POST /add-event      -> ajoute un événement injecté (ex: atterrissage d'urgence)
+ *   GET  /state/libre    -> état courant du mode Libre (JSON)
+ *   GET  /state/controle -> état courant du mode Contrôle (JSON)
+ *   POST /speed          -> change la vitesse de la simulation
+ */
 object DashboardServer {
 
   private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
 
+  /***
+   * Démarre le serveur HTTP sur le port 8080 et enregistre toutes les routes.
+   */
   def start(): Unit = {
     val server = HttpServer.create(new InetSocketAddress(8080), 0)
     server.createContext("/",                 exchange => handle(exchange, routeRoot))
@@ -28,7 +48,14 @@ object DashboardServer {
     server.start()
   }
 
-  // ── Dispatcher ────────────────────────────────────────────────
+  /***
+   * Exécute une route et renvoie la réponse HTTP au client.
+   *
+   * Ajoute automatiquement les headers Content-Type et CORS sur chaque réponse.
+   *
+   * @param ex    l'échange HTTP entrant (requête + réponse).
+   * @param route la fonction de traitement qui retourne (code HTTP, content-type, body).
+   */
   private def handle(
     ex:    HttpExchange,
     route: HttpExchange => (Int, String, String)
@@ -42,21 +69,36 @@ object DashboardServer {
     ex.getResponseBody.close()
   }
 
-  // ── GET / ─────────────────────────────────────────────────────
   private def routeRoot(ex: HttpExchange): (Int, String, String) =
     (200, "text/html; charset=UTF-8", htmlPage)
 
-  // ── POST /start ───────────────────────────────────────────────
+
+  /***
+   * Déclenche le démarrage de la simulation.
+   *
+   * @param ex l'échange HTTP entrant.
+   * @return 200 OK avec `{"ok":true}`.
+   */
   private def routeStart(ex: HttpExchange): (Int, String, String) = {
     SimState.triggerStart()
     (200, "application/json", """{"ok":true}""")
   }
 
-  // ── GET /schedule ─────────────────────────────────────────────
   private def routeSchedule(ex: HttpExchange): (Int, String, String) =
     (200, "application/json; charset=UTF-8", buildScheduleJson())
 
-  // ── POST /add-event ───────────────────────────────────────────
+  /***
+   * Enregistre un événement dynamique (ex: atterrissage d'urgence) dans [[SimState]].
+   *
+   * Paramètres attendus dans le body (form-urlencoded) :
+   *   - `hour`    : heure cible de l'événement (0-23)
+   *   - `minute`  : minute cible (0-59)
+   *   - `urgency` : niveau d'urgence (Civil, Commercial, Military, Medical, Presidential, Emergency)
+   *   - `note`    : description libre (optionnel)
+   *
+   * @param ex l'échange HTTP entrant.
+   * @return 200 OK avec `{"ok":true}`, ou 405 si la méthode n'est pas POST.
+   */
   private def routeAddEvent(ex: HttpExchange): (Int, String, String) = {
     if (ex.getRequestMethod != "POST") return (405, "text/plain", "Method Not Allowed")
     val raw    = new String(ex.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
@@ -80,7 +122,24 @@ object DashboardServer {
     (200, "application/json", """{"ok":true}""")
   }
 
-  // ── POST /configure ───────────────────────────────────────────
+  /***
+   * Génère l'emploi du temps à partir des paramètres de configuration.
+   *
+   * Valide le planning via [[PetriScheduleVerifier]] avant de l'accepter.
+   * Si le planning est invalide (deadlock détecté), retourne une erreur sans modifier [[SimState]].
+   *
+   * Paramètres attendus (form-urlencoded) :
+   *   - `runways`   : nombre de pistes (1-10, défaut 3)
+   *   - `garages`   : nombre de garages (1-20, défaut 6)
+   *   - `planes`    : nombre d'avions max simultanés (5-50, défaut 15)
+   *   - `seed`      : graine aléatoire pour la génération (défaut 42)
+   *   - `startHour` / `startMin` : heure de début de la simulation
+   *   - `endHour`   / `endMin`   : heure de fin de la simulation
+   *
+   * @param ex l'échange HTTP entrant.
+   * @return JSON avec `{"ok":true,"flights":N,"runways":N,"garages":N}` si valide,
+   *         ou `{"ok":false,"error":"..."}` si le planning est rejeté.
+   */
   private def routeConfigure(ex: HttpExchange): (Int, String, String) = {
     if (ex.getRequestMethod != "POST") return (405, "text/plain", "Method Not Allowed")
     val raw    = new String(ex.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
@@ -131,7 +190,12 @@ object DashboardServer {
     }
   }
 
-  // ── POST /speed ───────────────────────────────────────────────
+  /***
+   * Ajuste la vitesse de la simulation en changeant l'intervalle entre chaque tick.
+   *
+   * @param ex l'échange HTTP entrant. Paramètre attendu : `ms` (intervalle en millisecondes).
+   * @return JSON `{"ok":true,"ms":N}` avec la nouvelle valeur appliquée.
+   */
   private def routeSpeed(ex: HttpExchange): (Int, String, String) = {
     if (ex.getRequestMethod != "POST") return (405, "text/plain", "Method Not Allowed")
     val raw    = new String(ex.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
@@ -140,16 +204,18 @@ object DashboardServer {
     (200, "application/json", s"""{"ok":true,"ms":${SimState.getTickInterval}}""")
   }
 
-  // ── GET /state/libre ─────────────────────────────────────────
   private def routeStateLibre(ex: HttpExchange): (Int, String, String) =
     (200, "application/json; charset=UTF-8", buildStateJson(SimState.libre))
 
-  // ── GET /state/controle ──────────────────────────────────────
   private def routeStateControle(ex: HttpExchange): (Int, String, String) =
     (200, "application/json; charset=UTF-8", buildStateJson(SimState.controle))
 
-  // ── JSON builders ─────────────────────────────────────────────
 
+  /***
+   * Construit le JSON de l'emploi du temps complet (vols + événements injectés).
+   *
+   * @return JSON de la forme `{"flights":[...],"events":[...]}`.
+   */
   private def buildScheduleJson(): String = {
     val flights = SimState.scheduleSnapshot.values.flatten.toList
       .sortBy(_.scheduledTime)
@@ -163,6 +229,14 @@ object DashboardServer {
     s"""{"flights":$flights,"events":$events}"""
   }
 
+  /***
+   * Sérialise un événement injecté en JSON.
+   *
+   * Calcule automatiquement le `triggerTime` (= targetTime − 30 min) pour affichage.
+   *
+   * @param e l'événement injecté à sérialiser.
+   * @return JSON représentant l'événement.
+   */
   private def eventToJson(e: InjectedEvent): String = {
     val tH = e.targetHour
     val tM = e.targetMinute
@@ -175,6 +249,14 @@ object DashboardServer {
     s"""{"id":"${e.id}","type":"$typeName","typeLabel":"${esc(e.eventType.displayName)}","triggerTime":"$triggerTime","targetTime":"$targetTime","urgency":"${e.urgencyLevel.label}","note":"${esc(e.note)}","status":"${e.status}"}"""
   }
 
+  /***
+   * Construit le JSON de l'état courant d'une des 2 simulation (Libre ou Contrôle).
+   *
+   * Si la simulation n'a pas encore de snapshot, retourne un état vide avec des stats à zéro.
+   *
+   * @param slot le slot de simulation dont on veut l'état ([[SimState.libre]] ou [[SimState.controle]]).
+   * @return JSON avec les stats, la liste des vols et l'heure simulée courante.
+   */
   private def buildStateJson(slot: SimSlot): String = {
     val started  = SimState.isStarted
     val finished = slot.isFinished
@@ -208,8 +290,12 @@ object DashboardServer {
     }
   }
 
-  // ── Helpers ───────────────────────────────────────────────────
-
+  /***
+   * Décode un body de requête au format `application/x-www-form-urlencoded`.
+   *
+   * @param body le contenu brut du body HTTP.
+   * @return map clé -> valeur des paramètres décodés.
+   */
   private def parseForm(body: String): Map[String, String] =
     body.split("&").flatMap { kv =>
       kv.split("=", 2) match {
@@ -218,10 +304,22 @@ object DashboardServer {
       }
     }.toMap
 
+  /***
+   * Échappe les caractères spéciaux pour inclusion sûre dans une chaîne JSON.
+   *
+   * @param s la chaîne à échapper.
+   * @return la chaîne avec `\` et `"` échappés.
+   */
   private def esc(s: String): String =
     s.replace("\\", "\\\\").replace("\"", "\\\"")
 
 
+  /***
+   * Convertit une chaîne en [[UrgencyLevel]] correspondant.
+   *
+   * @param s la valeur brute reçue depuis le formulaire HTML.
+   * @return Some([[UrgencyLevel]]) si reconnu, None sinon.
+   */
   private def parseUrgency(s: String): Option[UrgencyLevel] = s match {
     case "Civil"         => Some(UrgencyLevel.Civil)
     case "Commercial"    => Some(UrgencyLevel.Commercial)
@@ -232,7 +330,7 @@ object DashboardServer {
     case _               => None
   }
 
-  // ── Page HTML ─────────────────────────────────────────────────
+  // Page HTML avec css inclus
   private val htmlPage: String = """<!DOCTYPE html>
 <html lang="fr">
 <head>

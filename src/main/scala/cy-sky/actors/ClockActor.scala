@@ -8,14 +8,35 @@ import cysky.protocol.ControlTowerCommand.Tick
 import java.time.LocalDateTime
 import scala.concurrent.duration._
 
+/***
+ * Classe de l'horloge de la simulation.
+ * 
+ * A noter : Cette classe est un singleton (1 seule instance possible).
+ *           C'est comme "static class" en java.
+ */
 object ClockActor {
 
   sealed trait ClockCommand
-  private case object TimerFired extends ClockCommand
-  case object Stop               extends ClockCommand
+    // sealed : permet au compilateur de connaitre toutes les sous-classes (qui doivent etre dans le meme fichier source).
+    //  -> utile dans l'usage de "match case" au sein des méthodes car
+    //     le compilateur exige que tous les cas soient couverts (ici : TimerFired et Stop).
+  private case object TimerFired extends ClockCommand   // Cas 1 : horloge continue de tourner
+  case object Stop               extends ClockCommand   // Cas 2 : fin de l'horloge
 
   private case object TickKey
 
+  /**
+   * Lance l'horloge de la simulation.
+   * Méthode principale de [[ClockActor]].
+   *
+   * @param towerRef     acteur ControlTower qui reçoit les ticks.
+   * @param startTime    heure de départ de la simulation.
+   * @param tickInterval intervalle réel entre deux ticks (ex: 50.millis).
+   * @param simStep      le pas du temps simulé par tick (ex: 1 minute).
+   * @param endTime      heure de fin de la simulation (le clock s'arrête proprement quand le temps simulé dépasse cette valeur).
+   *
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[ClockCommand]].
+   */
   def apply(
     towerRef:     ActorRef[ControlTowerCommand],
     startTime:    LocalDateTime,
@@ -28,6 +49,15 @@ object ClockActor {
       running(towerRef, startTime, simStep, endTime, timers)
     }
 
+  /***
+   * Gère l'horloge pendant la simulation
+   * @param towerRef      acteur ControlTower qui reçoit les ticks.
+   * @param now           heure actuelle dans la simulation.
+   * @param simStep       le pas du temps simulé par tick (ex: 1 minute).
+   * @param endTime      heure de fin de la simulation (le clock s'arrête proprement quand le temps simulé dépasse cette valeur).
+   * 
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[ClockCommand]].
+   */
   private def running(
     towerRef: ActorRef[ControlTowerCommand],
     now:      LocalDateTime,
@@ -37,6 +67,7 @@ object ClockActor {
   ): Behavior[ClockCommand] =
     Behaviors.receive { (ctx, msg) =>
       msg match {
+        // Cas 1 : horloge continue
         case TimerFired =>
           val next = now.plus(simStep)
           if (!next.isBefore(endTime)) {
@@ -49,7 +80,7 @@ object ClockActor {
             timers.startSingleTimer(TickKey, TimerFired, delay)
             running(towerRef, next, simStep, endTime, timers)
           }
-
+        // Cas 2 : horloge s'arrete
         case Stop =>
           ctx.log.info("[Clock] Arrêt forcé de l'horloge")
           timers.cancelAll()
