@@ -126,10 +126,7 @@ sealed trait EventType {
 }
 
 object EventType {
-  case object EmergencyArrival   extends EventType { val displayName = "Atterrissage d'urgence" }
-  case object RunwayClosure      extends EventType { val displayName = "Fermeture de piste"     }
-  case object FlightDelay        extends EventType { val displayName = "Retard de vol"           }
-  case object FlightCancellation extends EventType { val displayName = "Annulation de vol"       }
+  case object EmergencyArrival extends EventType { val displayName = "Atterrissage d'urgence" }
 }
 
 // ─────────────────────────────────────────────

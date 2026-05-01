@@ -49,6 +49,10 @@ object AirplaneCommand {
   /** Tick de l'horloge Akka — avance le temps simulé */
   final case class Tick(simulatedTime: LocalDateTime)
     extends AirplaneCommand
+
+  /** Le ScheduleManager a retardé le départ — mettre à jour l'heure interne */
+  final case class UpdateScheduledDepart(newDepart: LocalDateTime)
+    extends AirplaneCommand
 }
 
 // ───────────────────────────────────────────────────────────────

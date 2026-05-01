@@ -6,9 +6,7 @@ import cysky.SimState
 import cysky.model.{EventType, InjectedEvent}
 import cysky.protocol.{ControlTowerCommand, EventInjectorCommand}
 import cysky.protocol.EventInjectorCommand.{AddEvent, Tick}
-import cysky.protocol.ControlTowerCommand.{
-  InjectEmergencyArrival, InjectRunwayClosure, DelayFlight, CancelFlight
-}
+import cysky.protocol.ControlTowerCommand.InjectEmergencyArrival
 import java.time.LocalDateTime
 
 // ═══════════════════════════════════════════════════════════════
@@ -26,10 +24,7 @@ import java.time.LocalDateTime
 //   "triggered" dans SimState.
 //
 // Types d'événements gérés :
-//   EmergencyArrival    → InjectEmergencyArrival (TowerControl spawne l'avion)
-//   RunwayClosure       → InjectRunwayClosure     (TowerControl ferme piste aléatoire)
-//   FlightDelay         → DelayFlight             (TowerControl retarde un vol aléatoire)
-//   FlightCancellation  → CancelFlight            (TowerControl annule un vol aléatoire)
+//   EmergencyArrival → InjectEmergencyArrival (TowerControl spawne l'avion)
 // ═══════════════════════════════════════════════════════════════
 object EventInjectorActor {
 
@@ -106,21 +101,7 @@ object EventInjectorActor {
   ): Unit = e.eventType match {
 
     case EventType.EmergencyArrival =>
-      // L'avion doit arriver à l'heure cible (pas à l'heure du trigger)
       val targetDt = simTime.toLocalDate.atTime(e.targetHour, e.targetMinute)
       towerRef ! InjectEmergencyArrival(e.urgencyLevel, targetDt)
-
-    case EventType.RunwayClosure =>
-      // La TowerControl ferme une piste aléatoire disponible
-      towerRef ! InjectRunwayClosure
-
-    case EventType.FlightDelay =>
-      // Retard de 30 min appliqué à un vol futur aléatoire
-      // On utilise l'id de l'événement comme token (TowerControl choisit le vol)
-      towerRef ! DelayFlight(e.id, 30L)
-
-    case EventType.FlightCancellation =>
-      // Annulation d'un vol futur aléatoire
-      towerRef ! CancelFlight(e.id)
   }
 }

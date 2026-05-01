@@ -87,6 +87,8 @@ object AirplaneActor {
         Behaviors.stopped
 
       case Tick(_) => inFlight(data) // pas de transition sur tick en InFlight
+
+      case UpdateScheduledDepart(newDepart) => inFlight(data.copy(scheduledDepart = newDepart))
     }
 
   // ─────────────────────────────────────────────
@@ -109,6 +111,8 @@ object AirplaneActor {
 
       case LandingAuthorized(_) => landing(data) // déjà sur piste, ignoré
 
+      case UpdateScheduledDepart(newDepart) => landing(data.copy(scheduledDepart = newDepart))
+
       case msg =>
         Behaviors.unhandled
     }
@@ -128,6 +132,8 @@ object AirplaneActor {
         parked(next, garageRef)
 
       case Tick(_) => taxiing(data, garageRef)
+
+      case UpdateScheduledDepart(newDepart) => taxiing(data.copy(scheduledDepart = newDepart), garageRef)
 
       case _ => Behaviors.unhandled
     }
@@ -157,6 +163,9 @@ object AirplaneActor {
       case Divert =>
         // Ne devrait pas arriver quand garé — log + stop
         Behaviors.stopped
+
+      case UpdateScheduledDepart(newDepart) =>
+        parked(data.copy(scheduledDepart = newDepart), garageRef)
 
       case _ => Behaviors.unhandled
     }

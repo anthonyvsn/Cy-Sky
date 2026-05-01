@@ -255,6 +255,21 @@ object TowerControlActor {
         if (newDelays.nonEmpty)
           ctx.log.info(s"[TowerControl/${slot.name}] Retards appliqués : ${newDelays.map { case (id, d) => s"$id +${d}min" }.mkString(", ")}")
 
+        // Notifier les AirplaneActors déjà en cours dont le départ est retardé
+        newSchedule.values.flatten.foreach { nf =>
+          if (nf.kind == Departure) {
+            for {
+              of         <- oldByFlightId.get(nf.flightId).flatMap(_.headOption)
+              delta       = java.time.temporal.ChronoUnit.MINUTES.between(of.scheduledTime, nf.scheduledTime).toInt
+              if delta > 0
+              airplaneRef <- data.airplanes.get(nf.airplaneId)
+            } {
+              ctx.log.info(s"[TowerControl/${slot.name}] Mise à jour départ ${nf.airplaneId} : +${delta}min → ${nf.scheduledTime}")
+              airplaneRef ! AirplaneCommand.UpdateScheduledDepart(data.simDate.atTime(nf.scheduledTime))
+            }
+          }
+        }
+
         running(ctx, data.copy(schedule = newSchedule, delayInfo = updatedDelays), slot)
 
       // ── Annulation de vol(s) par le ScheduleManager ───────────
