@@ -76,7 +76,8 @@ object TowerControlActor {
     scheduleManagerRef:   ActorRef[ScheduleManagerCommand],
     notifiedEventIds:     Set[String],           // IDs d'InjectedEvent déjà transmis au ScheduleManager
     delayInfo:            Map[String, Int],       // flightId -> retard cumulé en minutes (Mode Contrôle)
-    cancelledFlights:     List[Flight]            // vols annulés par le SM (Mode Contrôle, pour affichage)
+    cancelledFlights:     List[Flight],           // vols annulés par le SM (Mode Contrôle, pour affichage)
+    waitingForGarage:     List[String]            // airplaneIds ayant atterri mais sans gate disponible
   )
 
   private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
@@ -155,7 +156,8 @@ object TowerControlActor {
         scheduleManagerRef   = scheduleManagerRef,
         notifiedEventIds     = Set.empty,
         delayInfo            = Map.empty,
-        cancelledFlights     = List.empty
+        cancelledFlights     = List.empty,
+        waitingForGarage     = List.empty
       )
       running(ctx, data, slot)
     }
@@ -233,7 +235,8 @@ object TowerControlActor {
       // ── Garage libéré ─────────────────────────────────────────
       case GarageFreed(garageId) =>
         ctx.log.info(s"[TowerControl/${slot.name} ${fmt(data.simTime)}] Garage $garageId libéré")
-        running(ctx, data.copy(freeGarages = data.freeGarages + garageId), slot)
+        val d1 = data.copy(freeGarages = data.freeGarages + garageId)
+        running(ctx, drainWaitingForGarage(ctx, d1), slot)
 
       // ── Replanification ───────────────────────────────────────
       case FlightAddedByManager(newSchedule) =>
@@ -525,12 +528,45 @@ object TowerControlActor {
         )
 
       case (None, _) =>
-        ctx.log.warn(s"[TowerControl ${fmt(data.simTime)}] Aucun garage disponible pour $airplaneId")
-        data
+        ctx.log.warn(s"[TowerControl ${fmt(data.simTime)}] Aucun garage disponible pour $airplaneId — en attente")
+        data.copy(
+          waitingForGarage = data.waitingForGarage :+ airplaneId,
+          flightStates     = data.flightStates + (airplaneId -> "En attente de gate")
+        )
 
       case (_, None) =>
         ctx.log.error(s"[TowerControl ${fmt(data.simTime)}] ActorRef introuvable pour $airplaneId")
         data
+    }
+
+  // ─────────────────────────────────────────────
+  // Assigner des garages aux avions en attente
+  //
+  // Appelé à chaque GarageFreed pour tenter de placer
+  // les avions qui avaient atterri sans gate disponible.
+  // ─────────────────────────────────────────────
+  private def drainWaitingForGarage(
+    ctx:  ActorContext[ControlTowerCommand],
+    data: TowerData
+  ): TowerData =
+    (data.waitingForGarage, data.freeGarages.headOption) match {
+      case (airplaneId :: rest, Some(garageId)) =>
+        data.airplanes.get(airplaneId) match {
+          case Some(airplaneRef) =>
+            val garageRef = data.garages(garageId)
+            airplaneRef ! TaxiToGarage(garageRef)
+            garageRef   ! ParkRequest(airplaneId, airplaneRef)
+            ctx.log.info(s"[TowerControl ${fmt(data.simTime)}] $airplaneId (en attente) → $garageId")
+            drainWaitingForGarage(ctx, data.copy(
+              waitingForGarage = rest,
+              freeGarages      = data.freeGarages - garageId,
+              flightStates     = data.flightStates + (airplaneId -> s"Au sol — $garageId")
+            ))
+          case None =>
+            // Avion supprimé entre-temps (BOOM, etc.) — on le retire de la file
+            drainWaitingForGarage(ctx, data.copy(waitingForGarage = rest))
+        }
+      case _ => data
     }
 
   // ─────────────────────────────────────────────
@@ -602,7 +638,8 @@ object TowerControlActor {
       runwayOccupancy   = data.runwayOccupancy  -- boomLandingRwys,
       takeoffOccupancy  = data.takeoffOccupancy -- boomTakeoffRwys,
       landingQueue      = data.landingQueue.filterNot(p => affectedPlanes(p.airplaneId)),
-      takeoffQueue      = data.takeoffQueue.filterNot(p => affectedPlanes(p.airplaneId))
+      takeoffQueue      = data.takeoffQueue.filterNot(p => affectedPlanes(p.airplaneId)),
+      waitingForGarage  = data.waitingForGarage.filterNot(affectedPlanes.contains)
     )
   }
 
@@ -650,7 +687,8 @@ object TowerControlActor {
       runwayOccupancy   = data.runwayOccupancy  -- boomLandingRwys,
       takeoffOccupancy  = data.takeoffOccupancy -- boomTakeoffRwys,
       landingQueue      = data.landingQueue.filterNot(p => affected(p.airplaneId)),
-      takeoffQueue      = data.takeoffQueue.filterNot(p => affected(p.airplaneId))
+      takeoffQueue      = data.takeoffQueue.filterNot(p => affected(p.airplaneId)),
+      waitingForGarage  = data.waitingForGarage.filterNot(affected.contains)
     )
   }
 }

@@ -184,12 +184,28 @@ object RunwayActor {
           }
 
         case LandRequest(airplaneId, _) =>
-          ctx.log.info(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] Accepte $airplaneId pendant taxi sortant")
+          ctx.log.info(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] Accepte atterrissage $airplaneId pendant taxi sortant")
           val next = data
             .withState(RunwayState.Landing)
             .withOccupied(Some(airplaneId))
             .copy(occupiedSince = Some(data.simTime))
           landing(next)
+
+        case EmergencyLandRequest(airplaneId, _) =>
+          ctx.log.warn(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] URGENCE $airplaneId acceptée pendant taxi sortant")
+          val next = data
+            .withState(RunwayState.Landing)
+            .withOccupied(Some(airplaneId))
+            .copy(occupiedSince = Some(data.simTime))
+          landing(next)
+
+        case TakeoffRequest(airplaneId, _) =>
+          ctx.log.info(s"[Runway ${data.runwayId} ${fmt(data.simTime)}] Accepte décollage $airplaneId pendant taxi sortant")
+          val next = data
+            .withState(RunwayState.TakeoffInProgress)
+            .withOccupied(Some(airplaneId))
+            .copy(occupiedSince = Some(data.simTime))
+          takeoffInProgress(next)
 
         case _ => taxiToGarage(data, taxiStart)
       }
