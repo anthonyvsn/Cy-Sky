@@ -3,14 +3,9 @@ package cysky.model
 import java.time.LocalDateTime
 
 
-// ─────────────────────────────────────────────
-// Urgency levels — ordered by priority (highest last)
-// priorityScore is used by ScheduleManager to rank plans
-// and by ControlTower's Priority Queue
-// ─────────────────────────────────────────────
-
 /***
  * Définit les caractéristiques de niveau d'urgence de [[UrgencyLevel]] (object lié).
+ * priorityScore est utilisé par le [[ScheduleManager]] pour classer les vols et par [[ControlTower]].
  */
 sealed trait UrgencyLevel {
   /***

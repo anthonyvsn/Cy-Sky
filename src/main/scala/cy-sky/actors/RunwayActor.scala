@@ -20,10 +20,12 @@ import java.time.format.DateTimeFormatter
  */
 object RunwayActor {
 
-  // ─────────────────────────────────────────────
-  // État interne immuable
-  // ─────────────────────────────────────────────
-  private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
+  private val HHmm = DateTimeFormatter.ofPattern("HH:mm")     // format horaire
+  /***
+   * Formate l'heure en HH:mm.
+   * @param t horaire
+   * @return l'heure formaté (String).
+   */
   private def fmt(t: LocalDateTime): String = t.format(HHmm)
 
 
@@ -37,7 +39,7 @@ object RunwayActor {
    * @param landingDurationMin  temps d'atterrissage minimal
    * @param takeoffDurationMin  temps de décollage minimal
    * @param taxiDurationMin     temps minimal pour aller au garage
-   * @param totalUsageMinutes
+   * @param totalUsageMinutes   temps total d'utilisation de la piste (minutes)
    * @param occupiedSince       moment à partir duquel la piste est occupée (valeur optionnelle, peut etre présente ou absente)
    * @param simTime             temps courant de la simulation
    */
@@ -53,11 +55,35 @@ object RunwayActor {
     occupiedSince:      Option[LocalDateTime] = None,
     simTime:            LocalDateTime = LocalDateTime.MIN   // dernière heure simulée connue
   ) {
+    
+    // Getters
+    /***
+     * Modifie l'état de la piste
+     * @param s   nouvel état de la piste
+     * @return un [[RunwayData]] avec l'état de la piste actualisé.
+     */
     def withState(s: RunwayState):          RunwayData = copy(state = s)
+
+    /***
+     * Modifie l'id de l'avion occupant la piste.
+     * @param id   id de l'avion occupant la piste (optionnel, si vide alors piste vide)
+     * @return un [[RunwayData]] actualisé.
+     */
     def withOccupied(id: Option[String]):   RunwayData = copy(occupiedBy = id)
+
+    /***
+     * Actualise le temps total (minutes) d'usage de la piste.
+     * @param mins   temps (minutes) à ajouter au temps total d'utilisation.
+     * @return un [[RunwayData]] actualisé.
+     */
     def withUsage(mins: Long):              RunwayData = copy(totalUsageMinutes = totalUsageMinutes + mins)
 
-    /** Taux d'occupation sur la journée simulée (1440 min = 24h) */
+    /***
+     * Détermine le taux d'occupation de la piste sur la journée simulée. (1440 min = 24h)
+     * 
+     * @param totalSimMinutes   durée de la simulation (minutes)
+     * @return le taux d'occupation de la piste (entre 0 et 1).
+     */
     def occupancyRate(totalSimMinutes: Long): Float =
       if (totalSimMinutes == 0L) 0f
       else totalUsageMinutes.toFloat / totalSimMinutes.toFloat
@@ -91,6 +117,13 @@ object RunwayActor {
   // État : Free — piste disponible
   // P_runway_free_i contient 1 jeton
   // ─────────────────────────────────────────────
+  /***
+   * La piste est dans un état "Free" (disponible).
+   * On gère les cas de décollages, atterrissages et fermetures de piste recus par messages.
+   * 
+   * @param data    données de la piste
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[RunwayCommand]].
+   */
   private def free(data: RunwayData): Behavior[RunwayCommand] =
     Behaviors.receive { (ctx, msg) =>
       msg match {
@@ -131,6 +164,12 @@ object RunwayActor {
   // État : Landing — atterrissage en cours
   // P_runway_landing_i contient 1 jeton, P_runway_free_i = 0
   // ─────────────────────────────────────────────
+  /***
+   * Gère la phase d'atterissage de l'avion sur la piste.
+   * 
+   * @param data    données de la piste
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[RunwayCommand]].
+   */
   private def landing(data: RunwayData): Behavior[RunwayCommand] =
     Behaviors.receive { (ctx, msg) =>
       msg match {
@@ -152,17 +191,24 @@ object RunwayActor {
             landing(data.copy(simTime = simTime))
           }
 
-        // Pendant Landing, tous les autres messages sont mis en file
-        // par la ControlTower — on ne les reçoit pas ici
+        // Pendant Landing, tous les autres messages sont mis en file par la ControlTower, on ne les reçoit pas ici.
         case _ => Behaviors.unhandled
       }
     }
 
+
   // ─────────────────────────────────────────────
   // État : TaxiToGarage — transitoire
-  // La piste est déjà libre (RunwayFreed envoyé),
-  // l'avion roule vers le garage
+  // La piste est déjà libre (RunwayFreed envoyé), l'avion roule vers le garage
   // ─────────────────────────────────────────────
+  /***
+   * Gère la phase d'envoi de l'avion ver le garage.
+   * On accepte qu'un autre avion atterrisse pendant l'envoi de l'avion au garage.
+   * 
+   * @param data          données de la piste
+   * @param taxiStart     horaire de la simulation
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[RunwayCommand]].
+   */
   private def taxiToGarage(
     data:      RunwayData,
     taxiStart: LocalDateTime
@@ -214,6 +260,12 @@ object RunwayActor {
   // ─────────────────────────────────────────────
   // État : TakeoffInProgress — décollage en cours
   // ─────────────────────────────────────────────
+  /***
+   * Gère la phase de décollage.
+   * 
+   * @param data          données de la piste
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[RunwayCommand]].
+   */
   private def takeoffInProgress(data: RunwayData): Behavior[RunwayCommand] =
     Behaviors.receive { (ctx, msg) =>
       msg match {
@@ -244,6 +296,13 @@ object RunwayActor {
   // État : Blocked — piste fermée (météo, incident)
   // Aucune transition franchissable depuis cet état
   // ─────────────────────────────────────────────
+  /***
+   * Gère le cas de blocage de la piste.
+   * Cet état reste inchangé jusqu'à réception d'un message de réouverture.
+   * 
+   * @param data          données de la piste
+   * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[RunwayCommand]].
+   */
   private def blocked(data: RunwayData): Behavior[RunwayCommand] =
     Behaviors.receive { (ctx, msg) =>
       msg match {

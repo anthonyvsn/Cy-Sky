@@ -11,41 +11,52 @@ import cysky.SimState
 import java.time.{LocalDateTime, LocalTime}
 import scala.util.Random
 
-// ═══════════════════════════════════════════════════════════════
-// ScheduleManagerActor
-//
-// Mode Libre :
-//   Ajoute le vol directement sans replanification.
-//   Conflit Pétri → BOOM immédiat.
-//
-// Mode Contrôle :
-//   Pour chaque piste :
-//     1. Tenter le placement sans délai → vérifie Pétri.
-//     2. En cas de conflit, identifie le(s) vol(s) bloquants
-//        (arrivée OU départ qui occupe la ressource) dont
-//        l'heure est encore dans le futur (> simTime).
-//     3. Teste des décalages par paliers (+15 … +120 min) sur
-//        ces vols, re-vérifie chaque fois avec le Pétri.
-//     4. Si aucune piste ni aucun délai ne sont viables → annulation.
-// ═══════════════════════════════════════════════════════════════
-object ScheduleManagerActor {
+/***
+ * Classe [[ScheduleManagerActor]] (Akka Typed) possédant 2 modes : "Libre" et "Controle".
+ * Il permet le gestion de l'emploi du temps, notamment si un vol prioritaire arrive ou qu'une piste se ferme.
+ *
+ * Mode [[Libre]] :
+ *   Ajoute le vol directement sans replanification.
+ *   Conflit dans le réseau de Pétri -> "Boom" immédiat.
+ *
+ * Mode [[Controle]] :
+ *   Pour chaque piste :
+ *     1. Tenter le placement sans délai -> vérifie réseau Pétri.
+ *     2. Si conflit, identifie les vols bloquants (arrivée ou départ qui occupe la ressource) dont l'heure est encore dans le futur (> simTime).
+ *     3. Teste des décalages par paliers (+15, ..., +120 min) sur ces vols, revérifie chaque fois avec le réseau de Pétri.
+ *     4. Si aucune piste ni aucun délai ne sont viables -> annulation.
+ */
+object ScheduleManagerActor {   // object : singleton (1 seule instance possible). C'est comme "static class" en java.
 
   sealed trait Mode
   case object Libre    extends Mode
   case object Controle extends Mode
 
-  // ── Paliers de décalage testés (minutes) ─────────────────────
+  // Paliers de décalage testés (minutes)
   private val DelaySteps          = List(15, 30, 45, 60, 90, 120)
   // Pour les vols d'urgence : décalages plus agressifs des bloquants
   private val EmergencyDelaySteps = List(15, 30, 45, 60, 90, 120, 150, 180, 240)
 
   // Un résultat est acceptable si toutes les issues restantes sont des GateOverflow.
-  // Le GateOverflow ne cause pas de BOOM : la simulation assigne les gates
-  // dynamiquement par file d'attente. Seul un RunwayConflict est un vrai danger.
+  // Le GateOverflow ne cause pas de "Boom" : la simulation assigne les gates dynamiquement par file d'attente.
+  // Seul un RunwayConflict est un vrai danger.
   private def isAcceptable(r: VerificationResult): Boolean =
     r.valid || r.issues.forall(_.isInstanceOf[GateOverflow])
 
 
+  /***
+   * Point d'entrée de [[ScheduleManagerActor]].
+   * Initialise l'acteur avec un compteur à zéro, un générateur aléatoire neuf et aucun vol d'urgence connu.
+   * 
+   * @param towerRef      référence de l'acteur [[TowerControlActor]] destinataire des messages/notifications (ajouts, annulations, Booms)
+   * @param schedule      planning courant. C'est un dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param runwayIds     liste des ids des pistes
+   * @param runwayCount   nombre de pistes
+   * @param garageCount   nombre de garages
+   * @param mode          mode de la simulation ([[Libre]] ou [[Controle]])
+   * 
+   * @return le [[akka.actor.typed.Behavior]] initial de l'acteur, pret à recevoir des messages de type [[ScheduleManagerCommand]].
+   */
   def apply(
     towerRef    : ActorRef[ControlTowerCommand],
     schedule    : Map[String, List[AircraftFlight]],
@@ -57,6 +68,21 @@ object ScheduleManagerActor {
     running(towerRef, schedule, runwayIds, runwayCount, garageCount, mode,
             counter = 0, rng = new Random(), emergencyAirplaneIds = Set.empty)
 
+  /***
+   * Méthode récursive principale.
+   * 
+   * @param towerRef      référence de l'acteur [[TowerControlActor]] destinataire des messages/notifications (ajouts, annulations, Booms)
+   * @param schedule      planning courant. C'est un dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param runwayIds     liste des ids des pistes
+   * @param runwayCount   nombre de pistes
+   * @param garageCount   nombre de garages
+   * @param mode          mode de la simulation (Libre ou Controle)
+   * @param counter       compteur de nouveau vol créé (utiliser pour génération d'identifiants)
+   * @param rng           valeur aléatoire utilisé pour sélectionner une piste (en mode [[Libre]]) et une destination
+   * @param emergencyAirplaneIds  liste des ids des vols avec niveau d'urgence
+   * 
+   * @return le prochain [[akka.actor.typed.Behavior]] de l'acteur après traitement du message de type [[ScheduleManagerCommand]].
+   */
   private def running(
     towerRef             : ActorRef[ControlTowerCommand],
     schedule             : Map[String, List[AircraftFlight]],
@@ -71,12 +97,14 @@ object ScheduleManagerActor {
     Behaviors.receive { (ctx, msg) =>
       msg match {
 
+        // un nouveau vol arrive
         case ScheduleManagerCommand.PrepareNewFlight(triggeringEventId, simTime, arrivalHour, arrivalMinute, urgencyLevel) =>
           val newCounter    = counter + 1
           val isEmergency   = urgencyLevel == cysky.model.UrgencyLevel.Emergency
           val arrivalTime   = LocalTime.of(arrivalHour, arrivalMinute)
           val departureTime = arrivalTime.plusHours(1)
 
+          // heure d'arrivée trop tardive
           if (arrivalTime.isAfter(LocalTime.of(22, 59))) {
             ctx.log.info(s"[ScheduleManager] Événement $triggeringEventId ignoré — heure cible trop tardive")
             running(towerRef, schedule, runwayIds, runwayCount, garageCount, mode, newCounter, rng, emergencyAirplaneIds)
@@ -104,8 +132,8 @@ object ScheduleManagerActor {
 
             mode match {
 
-              // ─── Mode Libre : vérification Pétri sans replanification
-              //     Conflit → BOOM immédiat (pas de tentative de décalage)
+              // Mode Libre : vérification Pétri (sans replanification)
+              // => si conflit, on a un "Boom" (pas de tentative de décalage)
               case Libre =>
                 val runway    = runwayIds(rng.nextInt(runwayIds.size))
                 val arr       = baseArrival.copy(runway = runway)
@@ -113,6 +141,7 @@ object ScheduleManagerActor {
                 val candidate = addToSchedule(schedule, runway, arr, dep)
                 val result    = PetriScheduleVerifier.verify(candidate, runwayCount, garageCount)
 
+                // vol conforme au réseau de Pétri (vol ajouté sans pb)
                 if (result.valid) {
                   ctx.log.info(
                     s"[SM/Libre ✓] SM_ARR_$newCounter/$airplaneId → $runway" +
@@ -122,41 +151,37 @@ object ScheduleManagerActor {
                   towerRef ! FlightAddedByManager(candidate)
                   running(towerRef, candidate, runwayIds, runwayCount, garageCount, mode, newCounter, rng, emergencyAirplaneIds)
                 } else {
+                  // Vol non conforme au réseau de Pétri => Boom
                   ctx.log.warn(s"[SM/Libre ✗] Conflit pour SM_ARR_$newCounter → BOOM (mode libre, pas de replanification)")
                   result.issues.foreach(i => ctx.log.warn(s"  ${i.msg}"))
                   sendBoom(towerRef, airplaneId, schedule, result, arr, dep)
                   running(towerRef, schedule, runwayIds, runwayCount, garageCount, mode, newCounter, rng, emergencyAirplaneIds)
                 }
 
-              // ─── Mode Contrôle : placement intelligent ───────────
+              // Mode Contrôle
+              // => utilisation du réseau de Pétri avec placement intelligent (replannification)
               case Controle =>
-                // Si le vol est une urgence, enregistrer son airplaneId pour que
-                // les futurs placements ne tentent JAMAIS de le décaler.
+                // Si le vol est une urgence, enregistrer son airplaneId pour que les futurs placements ne tentent pas de le décaler.
                 val updatedEmergencyIds =
                   if (isEmergency) emergencyAirplaneIds + airplaneId
                   else emergencyAirplaneIds
 
                 if (isEmergency) {
                   ctx.log.warn(s"[SM/URGENCE] Placement $airplaneId — urgences connues: $emergencyAirplaneIds — pistes: $runwayIds")
-                  ctx.log.warn(s"[SM/URGENCE] Vols sur schedule par piste: ${schedule.map { case (r, fs) => s"$r=${fs.map(f => s"${f.airplaneId}@${f.scheduledTime}(${f.kind})").mkString(",")}" }.mkString(" | ")}")
-                }
-
-                findValidPlacement(
-                  schedule, runwayIds, airplaneId, newCounter,
-                  baseArrival, baseDep,
-                  runwayCount, garageCount,
-                  simTime.toLocalTime,
+                   simTime.toLocalTime,
                   isEmergency,
                   updatedEmergencyIds,
                   if (isEmergency) Some(ctx.log) else None
                 ) match {
 
+                  // 1. Placement trouvé
                   case Right((newSchedule, logMsg)) =>
                     ctx.log.info(s"[SM/Controle ✓] $logMsg")
                     SimState.setSchedule(newSchedule)
                     towerRef ! FlightAddedByManager(newSchedule)
                     running(towerRef, newSchedule, runwayIds, runwayCount, garageCount, mode, newCounter, rng, updatedEmergencyIds)
 
+                  // 2. Aucune piste libre trouvée
                   case Left((_, lastRunway)) =>
                     // Toutes les tentatives ARR+DEP ont échoué.
                     // Un vol d'urgence ne peut jamais être annulé ou retardé :
@@ -203,19 +228,31 @@ object ScheduleManagerActor {
       }
     }
 
-  // ═══════════════════════════════════════════════════════════════
-  // findValidPlacement
-  //
-  // Parcourt chaque piste :
-  //   1. Tente sans délai.
-  //   2. Si conflit, identifie les vols bloquants futurs (arrivée
-  //      OU départ qui occupent la piste/gate) et teste des
-  //      décalages croissants.
-  //
-  // Retourne :
-  //   Right((schedule, logMsg))        placement trouvé
-  //   Left((lastResult, lastRunway))   toutes pistes épuisées
-  // ═══════════════════════════════════════════════════════════════
+  /***
+   * Trouve une piste libre et un créneau valide pour le vol ajouté (mode [[Controle]]).
+   * 
+   * Trois tentatives par piste, dans l'ordre :
+   *  - t0 : placement direct, sans décalage.
+   *  - t1 : décalage des vols bloquants existants (les urgences ne sont jamais décalées).
+   *  - t2 : décalage du nouveau vol lui-meme (vols normaux uniquement, limite 22h59).
+   *
+   * Si rien ne fonctionne et que le vol est une urgence, un placement forcé est calculé sur la piste la moins encombrée.
+   * 
+   * @param schedule      planning courant. C'est un dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param runwayIds     liste des ids des pistes
+   * @param airplaneId    id de l'avion
+   * @param counter       valeur courante du compteur de nouveau vol créé (utiliser pour génération d'identifiants de vol)
+   * @param baseArrival   Squelette du vol d'arrivée (piste non encore affectée).
+   * @param baseDep       Squelette du vol de départ (piste non encore affectée).
+   * @param runwayCount   nombre de pistes
+   * @param garageCount   nombre de garages
+   * @param simTime       heure de la simulation
+   * @param isEmergency   indique si le vol est une urgence (false par defaut)
+   * @param emergencyAirplaneIds  liste des ids des vols avec niveau d'urgence
+   * @param dbg           Logger optionnel pour traces fines (activé pour les urgences)
+   * 
+   * @return `Right((newSchedule, logMsg))` si un placement est trouvé ; `Left((lastResult, lastRunway))` si toutes les tentatives ont échoué.
+   */
   private def findValidPlacement(
     schedule             : Map[String, List[AircraftFlight]],
     runwayIds            : List[String],
@@ -234,9 +271,8 @@ object ScheduleManagerActor {
     // Paliers utilisés pour décaler les bloquants — plus agressifs pour une urgence.
     val blockerSteps = if (isEmergency) EmergencyDelaySteps else DelaySteps
 
-    // Pour une urgence : trier les pistes de façon à essayer en PREMIER celles
-    // qui n'ont pas déjà une autre urgence planifiée.
-    // Cela évite d'empiler deux urgences sur la même piste quand une piste libre existe.
+    // Pour une urgence : trier les pistes de façon à essayer d'abord celles qui n'ont pas déjà une urgence planifiée.
+    // Cela évite d'empiler 2 urgences sur la même piste.
     val orderedRunways = if (isEmergency) {
       val (free, occupied) = runwayIds.partition { rwy =>
         schedule.getOrElse(rwy, Nil).forall(f => !emergencyAirplaneIds.contains(f.airplaneId))
@@ -250,8 +286,8 @@ object ScheduleManagerActor {
         val arr = baseArrival.copy(runway = runway)
         val dep = baseDep.copy(runway = runway)
 
-        // ── Tentative 0 : sans délai ─────────────────────────────
-        // Valide ou seulement GateOverflow (pas de RunwayConflict) → accepté.
+        // ***** Tentative 0 : sans délai *****
+        // Valide ou seulement GateOverflow (pas de RunwayConflict) -> accepté.
         lazy val t0: Option[(Map[String, List[AircraftFlight]], String)] = {
           val c = addToSchedule(schedule, runway, arr, dep)
           val r = PetriScheduleVerifier.verify(c, runwayCount, garageCount)
@@ -262,11 +298,10 @@ object ScheduleManagerActor {
             s" arrivée ${fmt(arr.scheduledTime)}, départ ${fmt(dep.scheduledTime)}"))
         }
 
-        // ── Tentative 1 : décaler les vols BLOQUANTS (piste seulement) ──
+        // ***** Tentative 1 : décaler les vols bloquants (piste seulement) *****
         // Résout les RunwayConflict sans toucher les occupants de gate.
-        // Les vols d'urgence déjà planifiés (emergencyAirplaneIds) ne sont
-        // JAMAIS décalés : si le seul bloquant est une urgence, t1 échoue
-        // et on passe à la piste suivante (t0 y trouvera peut-être un créneau libre).
+        // Les vols d'urgence déjà planifiés (emergencyAirplaneIds) ne sont jamais décalés
+        // Si le seul bloquant est une urgence, t1 échoue et on passe à la piste suivante (t0 y trouvera peut-être un créneau libre).
         lazy val t1: Option[(Map[String, List[AircraftFlight]], String)] = {
           val c0 = addToSchedule(schedule, runway, arr, dep)
           val r0 = PetriScheduleVerifier.verify(c0, runwayCount, garageCount)
@@ -289,8 +324,8 @@ object ScheduleManagerActor {
           }
         }
 
-        // ── Tentative 2 : reculer l'atterrissage du NOUVEAU vol ──────
-        // NON applicable pour un vol d'urgence : on ne retarde jamais une urgence.
+        // ***** Tentative 2 : reculer l'atterrissage du nouveau vol *****
+        // /!\ Cas non applicable pour un vol d'urgence.
         // Pour un vol normal : décale arr+dep jusqu'à trouver un créneau libre.
         lazy val t2: Option[(Map[String, List[AircraftFlight]], String)] =
           if (isEmergency) None
@@ -363,15 +398,25 @@ object ScheduleManagerActor {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
+
   // extractRunwayBlockingIds
   //
-  // Variante de extractBlockingIds qui ne traite QUE les RunwayConflict.
-  // Les GateOverflow sont délibérément ignorés : décaler les occupants
-  // de gate les maintient plus longtemps en gate (aggrave le problème),
+  // Variante de extractBlockingIds qui ne traite que les RunwayConflict.
+  // Les GateOverflow sont délibérément ignorés : décaler les occupants de gate les maintient plus longtemps en gate (aggrave le problème),
   // et crée de nouveaux conflits en cascade entre vols T1 dos-à-dos.
   // Le GateOverflow résiduel est accepté via isAcceptable.
-  // ═══════════════════════════════════════════════════════════════
+
+  /***
+   * Retourne les ids des avions qui causent un `RunwayConflict` sur la piste (en ignorant volontairement les GateOverflow et Deadlock).
+   *
+   * Utilisée par [[findValidPlacement]] (t1) : décaler des occupants de gate aggraverait les conflits plutôt que de les résoudre.
+   *
+   * @param candidate Planning candidat (nouveau vol déjà inclus). => C'est un dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param result    résultat de vérification Pétri.
+   * @param newId     id du nouveau vol, exclu du résultat.
+   * @param simTime   heure courante  de la simulation. (permet de retenir uniquement les vols futurs)
+   * @return liste des ids bloquants.
+   */
   private def extractRunwayBlockingIds(
     candidate : Map[String, List[AircraftFlight]],
     result    : VerificationResult,
@@ -405,19 +450,18 @@ object ScheduleManagerActor {
       case _ => None  // GateOverflow et Deadlock ignorés intentionnellement
     }.distinct.filterNot(_ == newId)
 
-  // ═══════════════════════════════════════════════════════════════
-  // extractBlockingIds
-  //
-  // Identifie les airplaneIds qui bloquent la ressource au moment
-  // du conflit Pétri.
-  //
-  // IMPORTANT : un conflit de type "LAND" peut être causé par un
-  // ATTERRISSAGE en cours OU par un DÉCOLLAGE en cours (qui occupe
-  // la même piste). Les deux cas sont traités.
-  //
-  // Seuls les vols dont l'heure est encore dans le futur (>simTime)
-  // sont retournés — on ne peut pas décaler un vol déjà passé.
-  // ═══════════════════════════════════════════════════════════════
+  /***
+   * Identifie les ids de tous les avions avions responsables des conflits de Pétri détectés ([[RunwayConflict]] LAND/TAXI et [[GateOverflow]]) .
+   *
+   * Un conflit de type "LAND" peut être causé par un atterrissage en cours ou un décollage (qui occupe la même piste).
+   * Seuls les vols dont l'heure est encore dans le futur (>simTime) sont retournés.
+   * 
+   * @param candidate Planning candidat (nouveau vol déjà inclus). => C'est un dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param result    résultat de vérification Pétri
+   * @param newId     id du nouveau vol, exclu du résultat
+   * @param simTime   heure courante de la simulation. (permet de retenir uniquement les vols futurs)
+   * @return liste des ids bloquants.
+   */
   private def extractBlockingIds(
     candidate : Map[String, List[AircraftFlight]],
     result    : VerificationResult,
@@ -483,12 +527,16 @@ object ScheduleManagerActor {
       case RunwayConflict(_, _, _, _) => None
     }.distinct.filterNot(_ == newId)
 
-  // ═══════════════════════════════════════════════════════════════
-  // delayFlight
-  //
-  // Décale les horaires d'un avion dans le schedule.
-  // Seuls les vols dont scheduledTime > simTime sont modifiés.
-  // ═══════════════════════════════════════════════════════════════
+  /***
+   * Décale les horaires d'un avion dans le schedule.
+   * Seuls les vols dont scheduledTime > simTime sont modifiés.
+   * 
+   * @param schedule      planning courant. C'est un dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param airplaneId    id de l'vion à décaler
+   * @param deltaMin      décalage en minutes
+   * @param simTime       heure courante de la simulation
+   * @return nouveau planning ("schedule") avec les horaires mis à jour.
+   */
   private def delayFlight(
     schedule  : Map[String, List[AircraftFlight]],
     airplaneId: String,
@@ -503,9 +551,21 @@ object ScheduleManagerActor {
       }
     }.toMap
 
-  // ═══════════════════════════════════════════════════════════════
-  // sendBoom — détermine le type de BOOM et le transmet à la tour.
-  // ═══════════════════════════════════════════════════════════════
+  /***
+   * Détermine le type de Boom à partir du 1er conflit détecté et le transmet à la [[TowerControl]].
+   * 
+   * 3 types de Boom possibles :
+   *  - RunwayConflict LAND -> [[BoomRunway]] : collision sur la piste à l'atterrissage.
+   *  - RunwayConflict TAXI -> [[BoomTaxi]]   : collision sur la voie de circulation.
+   *  - GateOverflow, `Deadlock` ou autre -> [[BoomGarage]] : débordement de gate.
+   * 
+   * @param towerRef   référence de l'acteur [[TowerControlActor]] destinataire des messages
+   * @param airplaneId id de l'avion qui a provoqué le conflit
+   * @param schedule   Planning en vigueur. => dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param result     résultat de vérification Pétri
+   * @param arrival    vol d'arrivée du nouvel avion
+   * @param departure  vol de départ du nouvel avion
+   */
   private def sendBoom(
     towerRef   : ActorRef[ControlTowerCommand],
     airplaneId : String,
@@ -556,8 +616,16 @@ object ScheduleManagerActor {
         towerRef ! BoomGarage(boomPlanes, List(arrival, departure))
     }
 
-  // ── Helpers ───────────────────────────────────────────────────
 
+  /**
+   * Ajoute les vols d'arrivée et de départ d'un avion au planning d'une piste donnée.
+   *
+   * @param schedule Planning courant. => dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés
+   * @param runway   id de la piste cible
+   * @param arr      vol d'arrivée à insérer
+   * @param dep      vol de départ à insérer
+   * @return nouveau planning avec `arr` et `dep` ajoutés en fin de liste pour `runway`.
+   */
   private def addToSchedule(
     schedule: Map[String, List[AircraftFlight]],
     runway  : String,
@@ -569,6 +637,15 @@ object ScheduleManagerActor {
       case None     => Some(List(arr, dep))
     }
 
+  /**
+   * Ajoute uniquement le vol d'arrivée d'un avion au planning d'une piste donnée.
+   * Utilisé lorsque le départ est annulé (cad gate saturé) ou différé.
+   *
+   * @param schedule Planning courant. => dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés
+   * @param runway   id de la piste cible
+   * @param arr      vol d'arrivée à insérer
+   * @return nouveau planning avec `arr` ajouté en fin de liste pour `runway`.
+   */
   private def addArrivalOnlyToSchedule(
     schedule: Map[String, List[AircraftFlight]],
     runway  : String,

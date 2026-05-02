@@ -16,8 +16,7 @@ import java.time.temporal.ChronoUnit
 // ═══════════════════════════════════════════════════════════════
 // TowerControlActor — Akka Typed, style fonctionnel pur
 //
-// Orchestre une journée de simulation à l'aéroport en suivant
-// le planning généré par ScheduleGeneratorAlgorithm.
+// Orchestre une journée de simulation à l'aéroport en suivant le planning généré par ScheduleGeneratorAlgorithm.
 //
 // Responsabilités :
 //   - Spawner les AirplaneActors au bon moment (heure d'arrivée)
@@ -25,11 +24,26 @@ import java.time.temporal.ChronoUnit
 //   - Assigner pistes libres et garages disponibles
 //   - Propager les Ticks à tous les acteurs enfants
 // ═══════════════════════════════════════════════════════════════
-object TowerControlActor {
+/***
+ * Classe [[TowerControlActor]] (Akka Typed)
+ * 
+ * Orchestre une journée de simulation à l'aéroport en suivant le planning généré par ScheduleGeneratorAlgorithm.
+ * Responsabilités :
+ *   -> Spawner les AirplaneActors au bon moment (heure d'arrivée)
+ *   -> Gérer les files d'atterrissage et de décollage par priorité
+ *   -> Assigner pistes libres et garages disponibles
+ *   -> Propager les Ticks à tous les acteurs enfants
+ */
+object TowerControlActor {      // object : singleton (1 seule instance possible). C'est comme "static class" en java.
 
-  // ─────────────────────────────────────────────
-  // Demandes en attente dans les files internes
-  // ─────────────────────────────────────────────
+  /**
+   * Demande d'atterrissage en attente dans la file interne de la tour.
+   *
+   * @param airplaneId id de l'avion demandant à atterrir
+   * @param urgency    Niveau d'urgence (détermine la position dans la file)
+   * @param replyTo    référence de l'acteur avion à qui envoyer [[LandingAuthorized]]
+   * @param emergency  vaut true si le vol est une urgence absolue
+   */
   final case class PendingLanding(
     airplaneId: String,
     urgency:    UrgencyLevel,
@@ -37,26 +51,32 @@ object TowerControlActor {
     emergency:  Boolean = false
   )
 
+  /**
+   * Demande de décollage en attente dans la file de la tour.
+   *
+   * @param airplaneId id de l'avion demandant à décoller
+   * @param replyTo    référence de l'acteur avion à qui envoyer [[TakeoffAuthorized]]
+   */
   final case class PendingTakeoff(
     airplaneId: String,
     replyTo:    ActorRef[AirplaneCommand]
   )
 
   // ─────────────────────────────────────────────
-  // État interne immuable de la tour de contrôle
-  //
-  //   runways          : pistes disponibles (id → acteur)
-  //   garages          : garages disponibles (id → acteur)
-  //   airplanes        : avions actifs       (id → acteur)
-  //   schedule         : emploi du temps     (runwayId → vols)
-  //   landingQueue     : file d'atterrissage triée par priorité décroissante
-  //   takeoffQueue     : file de décollage FIFO
-  //   runwayOccupancy  : quelle piste est occupée par quel avion
-  //   freeRunways      : pistes actuellement libres
-  //   freeGarages      : garages actuellement libres
-  //   launchedAirplanes: airplaneIds déjà instanciés (évite les doublons)
-  //   simDate          : date du jour simulé
-  // ─────────────────────────────────────────────
+  /*** Données de la tour de controle. (cet état est interne immuable).
+   * 
+   * @param runways          pistes disponibles (dictionnaire : id -> acteur)
+   * @param garages          garages disponibles (dictionnaire : id -> acteur)
+   * @param airplanes        avions actifs       (dictionnaire : id -> acteur)
+   * @param schedule         planning courant    (dictionnaire : id piste -> liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés)
+   * @param landingQueue     file d'atterrissage triée par priorité décroissante
+   * @param takeoffQueue     file de décollage
+   * @param runwayOccupancy  quelle piste est occupée par quel avion
+   * @param freeRunways      pistes actuellement libres
+   * @param freeGarages      garages actuellement libres
+   * @param launchedAirplanes airplaneIds déjà instanciés (évite les doublons)
+   * @param simDate          horaire courant de la simulation
+   */
   final case class TowerData(
     runways:              Map[String, ActorRef[RunwayCommand]],
     garages:              Map[String, ActorRef[GarageCommand]],
@@ -81,6 +101,10 @@ object TowerControlActor {
   )
 
   private val HHmm = DateTimeFormatter.ofPattern("HH:mm")
+   /***
+   * Renvoie l'horaire en String.
+   * @return l'horaire en String HH:mm
+   */
   private def fmt(t: LocalDateTime): String = t.format(HHmm)
 
   // ─────────────────────────────────────────────
@@ -94,6 +118,20 @@ object TowerControlActor {
   //   schedule    : plan de vol généré par ScheduleGeneratorAlgorithm
   //   simDate     : date de la simulation (pour construire les LocalDateTime)
   // ─────────────────────────────────────────────
+
+  /***
+   * Point d'entrée de la tour de controle.
+   * La TowerControl spawne elle-même ses [[RunwayActor]]s, [[GarageActor]]s et le [[ScheduleManagerActor]].
+   * (ctx.self disponible dans Behaviors.setup évite la dépendance circulaire).
+   * 
+   * @param runwayCount nombre de pistes à créer
+   * @param garageCount nombre de garages à créer
+   * @param schedule    planning de vol initial (piste -> liste de vols)
+   * @param simDate     date simulée, utilisée pour construire les `LocalDateTime` des avions
+   * @param slot        Slot de simulation pour la publication des mises à jour frontend
+   * @param mode        Mode du [[ScheduleManagerActor]] (défaut : [[ScheduleManagerActor.Controle]]).
+   * @return le [[Behavior]] initial de la tour.
+   */
   def apply(
     runwayCount: Int,
     garageCount: Int,
@@ -162,11 +200,17 @@ object TowerControlActor {
       running(ctx, data, slot)
     }
 
-  // ─────────────────────────────────────────────
   // Comportement principal — machine à état unique
-  // (pas de sous-états car la ControlTower doit
-  //  toujours rester réactive à tous les messages)
-  // ─────────────────────────────────────────────
+  // (pas de sous-états car la ControlTower doit toujours rester réactive à tous les messages)
+  /**
+   * Boucle principale de la tour.
+   * Machine à état unique intentionnellement non découpée en sous-états, afin de rester réactive à tous le smessages (notamment aux urgences).
+   *
+   * @param ctx  contexte Akka Typed
+   * @param data données de la tour de controle
+   * @param slot slot de simulation pour les publications frontend
+   * @return le prochain [[Behavior]] après traitement du message.
+   */
   private def running(
     ctx:  ActorContext[ControlTowerCommand],
     data: TowerData,
@@ -347,6 +391,17 @@ object TowerControlActor {
   // scheduledTime ≤ simTime.toLocalTime et qui n'ont pas encore
   // été instanciés. Crée un AirplaneActor par vol trouvé.
   // ─────────────────────────────────────────────
+  /**
+   * Instancie un [[AirplaneActor]] pour chaque vol d'arrivée dont l'heure planifiée est atteinte et qui n'a pas encore été lancé.
+   *
+   * Si le départ a été annulé par le SM, l'avion est configuré pour rester garé
+   * jusqu'à 23h59 plutôt que de tenter un décollage.
+   *
+   * @param ctx     contexte Akka Typed
+   * @param data    données de la tour de controle
+   * @param simTime horaire courant de la simulation
+   * @return [[TowerData]] mis à jour avec les nouveaux acteurs avion enregistrés.
+   */
   private def spawnDueAirplanes(
     ctx:     ActorContext[ControlTowerCommand],
     data:    TowerData,
@@ -407,14 +462,15 @@ object TowerControlActor {
   // 30 prochaines minutes simulées et qui n'a pas encore été notifié,
   // envoie PrepareNewFlight au ScheduleManager.
   // ─────────────────────────────────────────────
-  // ─────────────────────────────────────────────
-  // Notifier le ScheduleManager 30 minutes simulées avant chaque
-  // InjectedEvent (événements ajoutés via le dashboard).
-  //
-  // Le déclencheur = targetTime − 30 min.
-  // Dès que simTime atteint ce seuil, PrepareNewFlight est envoyé.
-  // notifiedEventIds garantit un envoi unique par événement.
-  // ─────────────────────────────────────────────
+  /**
+   * Prévient le [[ScheduleManagerActor]] 30 minutes simulées avant chaque vol.
+   * 
+   * Pour chaque vol Arrival dont l'heure planifiée est dans les 30 prochaines minutes simulées et qui n'a pas encore été notifié, envoie PrepareNewFlight au ScheduleManager.
+   *
+   * @param ctx  contexte Akka Typed
+   * @param data données de la tour de controle (état immuable)
+   * @return [[TowerData]] avec les événements notifiés ajoutés à notifiedEventIds.
+   */
   private def notifyScheduleManager(
     ctx:  ActorContext[ControlTowerCommand],
     data: TowerData
@@ -450,14 +506,19 @@ object TowerControlActor {
     }
   }
 
-  // ─────────────────────────────────────────────
   // Vider la file d'atterrissage
   //
   // Tant qu'il y a des pistes libres et des avions en attente :
   //   - Autoriser l'atterrissage (avion + piste)
   //   - Marquer la piste comme occupée
   // Récursif pour traiter plusieurs pistes libres en un seul appel.
-  // ─────────────────────────────────────────────
+  /**
+   * Autorise autant d'atterrissages que de pistes libres disponibles (récursif).
+   * 
+   * @param ctx  contexte Akka Typed
+   * @param data données de la tour de controle
+   * @return [[TowerData]] mis à jour après attribution des pistes.
+   */
   private def drainLandingQueue(
     ctx:  ActorContext[ControlTowerCommand],
     data: TowerData
@@ -479,13 +540,14 @@ object TowerControlActor {
       case _ => data
     }
 
-  // ─────────────────────────────────────────────
-  // Vider la file de décollage
-  //
-  // Priorité aux atterrissages : on n'utilise une piste pour
-  // un décollage que s'il n'y a aucun atterrissage en attente.
-  // ─────────────────────────────────────────────
-  // Les atterrissages sont prioritaires : pas de décollage si la file landing est non vide
+  /**
+   * Autorise des décollages sur les pistes libres uniquement si la file d'atterrissage est vide (atterrissages toujours prioritaires).
+   * méthode récursive
+   *
+   * @param ctx  contexte Akka Typed
+   * @param data données de la tour de controle
+   * @return [[TowerData]] mis à jour après attribution des pistes.
+   */
   private def drainTakeoffQueue(
     ctx:  ActorContext[ControlTowerCommand],
     data: TowerData
@@ -504,13 +566,15 @@ object TowerControlActor {
       case _ => data
     }
 
-  // ─────────────────────────────────────────────
-  // Assigner un garage à un avion qui vient d'atterrir
-  //
-  // Envoie TaxiToGarage à l'avion (transition Landing → Taxiing)
-  // puis ParkRequest au garage (le garage envoie ParkConfirmed
-  // directement à l'avion, déclenchant la transition Taxiing → Parked).
-  // ─────────────────────────────────────────────
+  /**
+   * Assigne le premier garage libre à un avion qui vient d'atterrir.
+   * Envoie [[TaxiToGarage]] à l'avion et [[ParkRequest]] au garage. Le garage répond directement à l'avion avec `ParkConfirmed`.
+   *
+   * @param ctx        contexte Akka Typed
+   * @param data       données de la tour de controle
+   * @param airplaneId id de l'avion à garer
+   * @return [[TowerData]] avec le gate retiré de `freeGarages`.
+   */
   private def assignGarage(
     ctx:        ActorContext[ControlTowerCommand],
     data:       TowerData,
@@ -573,18 +637,29 @@ object TowerControlActor {
   // Insertion dans la file d'atterrissage
   // par priorité décroissante (score le plus haut en tête)
   // ─────────────────────────────────────────────
+  /**
+   * Insère une demande d'atterrissage dans la file en maintenant l'ordre décroissant par `urgency.priorityScore`.
+   *
+   * @param queue   file courante (déjà triée)
+   * @param pending nouvelle demande d'atterrissage à insérer
+   * @return nouvelle file triée par priorité décroissante d'urgence.
+   */
   private def insertByPriority(
     queue:   List[PendingLanding],
     pending: PendingLanding
   ): List[PendingLanding] =
     (pending :: queue).sortBy(_.urgency.priorityScore)(Ordering.Int.reverse)
 
-  // ─────────────────────────────────────────────
-  // BOOM helpers
-  // ─────────────────────────────────────────────
 
   /** Injecte les vols du SM plane rejeté dans le schedule du Tower
    *  afin qu'ils apparaissent dans le tableau frontend avec le statut BOOM. */
+  /**
+ * Injecte les vols du SM dans le planning de la tour pour qu'ils apparaissent dans le frontend (avec statut "BOOM").
+ *
+ * @param data      données courantes de la tour de controle.
+ * @param smFlights liste des ids des vols à injecter
+ * @return [[TowerData]] avec `schedule` mis à jour.
+ */
   private def withSmFlights(data: TowerData, smFlights: List[Flight]): TowerData =
     if (smFlights.isEmpty) data
     else data.copy(
@@ -600,11 +675,16 @@ object TowerControlActor {
   private def isFinalStatus(s: String): Boolean =
     s == "BOOM" || s == "Annulé" || s == "Parti"
 
-  /** Conflit piste ou taxi.
-   *  - BOOM uniquement pour les 2 avions en conflit (planes).
-   *  - "Annulé" pour les autres vols FUTURS (pas encore lancés) sur cette piste.
-   *  - Les avions actifs (déjà en vol/sol) ne sont PAS touchés.
-   *  - Schedule intact pour l'affichage frontend. */
+  /**
+   * Applique un Boom de piste.
+   * Il marque les avions en collision à "Boom" et les autres vols futurs non lancés à "Annulé".
+   *
+   * @param ctx    contexte Akka Typed
+   * @param data   données courantes de la tour de controle (vols SM déjà injectés via [[withSmFlights]])
+   * @param runway piste sur laquelle le conflit s'est produit
+   * @param planes liste des ids des avions en collision.
+   * @return [[TowerData]] mis à jour.
+   */
   private def applyBoomRunway(
     ctx:    ActorContext[ControlTowerCommand],
     data:   TowerData,
@@ -651,10 +731,15 @@ object TowerControlActor {
     planes: List[String]
   ): TowerData = applyBoomRunway(ctx, data, runway, planes)
 
-  /** Débordement garage.
-   *  - BOOM pour les 2 avions ciblés (planes).
-   *  - "Annulé" pour tous les vols FUTURS non encore lancés (toutes pistes).
-   *  - Les avions actifs ne sont PAS touchés. */
+  /**
+   * Applique un Boom garage.
+   * Il marque les avions en collision à "Boom" et annule tous les vols futurs non encore lancés sur toutes les pistes.
+   *
+   * @param ctx    contexte Akka Typed
+   * @param data   données courantes de la tour de controle (vols SM déjà injectés via [[withSmFlights]])
+   * @param planes liste des ids des avions impliqués dans le débordement.
+   * @return [[TowerData]] mis à jour.
+   */
   private def applyBoomGarage(
     ctx:    ActorContext[ControlTowerCommand],
     data:   TowerData,
