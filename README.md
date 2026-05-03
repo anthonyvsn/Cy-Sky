@@ -4,13 +4,13 @@ Simulation d'aéroport en Scala avec Akka, où deux tours de contrôle s'affront
 
 ## C'est quoi exactement ?
 
-Le projet simule une journée complète d'aéroport — avions en approche, atterrissages, stationnements en gate, décollages — en pilotant tout ça avec des acteurs Akka qui se passent des messages.
+Le projet simule une journée complète d'aéroport (avions en approche, atterrissages, stationnements en gate, décollages) en pilotant tout ça avec des acteurs Akka qui se passent des messages.
 
 La partie intéressante : deux simulations tournent **en parallèle** sur le même planning de vols, mais avec deux approches opposées.
 
-**Mode Libre** — le ScheduleManager insère les événements directement. Si deux avions se retrouvent sur la même piste au même moment, c'est le **BOOM** (collision détectée, vols marqués comme détruits).
+**Mode Libre** : le ScheduleManager insère les événements directement. Si deux avions se retrouvent sur la même piste au même moment, c'est le **BOOM** (collision détectée, vols marqués comme détruits).
 
-**Mode Contrôle** — avant chaque insertion, le planning est vérifié formellement par un réseau de Pétri. Si un conflit est détecté, le SM essaie de décaler les vols gênants, de changer de piste, ou en dernier recours d'annuler. Les urgences, elles, ne sont jamais annulées — le SM force leur placement quoi qu'il arrive.
+**Mode Contrôle** : avant chaque insertion, le planning est vérifié formellement par un réseau de Pétri. Si un conflit est détecté, le SM essaie de décaler les vols gênants, de changer de piste, ou en dernier recours d'annuler. Les urgences, elles, ne sont jamais annulées (le SM force leur placement quoi qu'il arrive).
 
 ## Comment lancer
 
@@ -47,5 +47,5 @@ Les pistes sont des machines à états strictes : un seul avion à la fois, dans
 ## Stack
 
 - **Scala 2.13** + **Akka Actor Typed 2.7.0**
-- Serveur HTTP embarqué Java (pas de framework externe) pour le dashboard
+- Serveur HTTP embarqué Java (pas de framework externe) communiquant avec le dashboard web via **Polling JSON** régulier
 - Logback pour les logs, ScalaTest pour les tests
