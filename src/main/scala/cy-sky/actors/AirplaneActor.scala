@@ -33,7 +33,7 @@ object AirplaneActor {    // object : singleton (1 seule instance possible). C'e
    * @param assignedGarageId  est le garage assigné à l'avion.
    * @param scheduledArrival  horaire d'arrivée
    * @param scheduledDepart   horaire de départ
-   * @param towerRef          
+   * @param towerRef          référence de l'acteur [[TowerControlActor]] destinataire des messages
    */
   final case class AirplaneData(
     airplaneId:       String,

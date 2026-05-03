@@ -38,7 +38,7 @@ object GarageActor {
    * @param garageId      id du garage
    * @param state         état du garage (Free / Occupied)
    * @param occupiedBy    id de l'avion occupant le garage (valeur optionnelle, peut etgre présente ou absente)
-   * @param towerRef
+   * @param towerRef      référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @param occupiedSince horaire à partir duquel le garage est occupé (valeur optionnelle, peut etgre présente ou absente)
    * @param groundDurationMinutes temps passé par l'avion dans le garage
    * @param simTime       horaire actuelle de la simulation
@@ -72,7 +72,7 @@ object GarageActor {
    * Point d'entrée de [[GarageActor]].
    * 
    * @param garageId      id du garage
-   * @param towerRef
+   * @param towerRef      référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[GarageCommand]].
    */
   def apply(
@@ -138,7 +138,7 @@ object GarageActor {
    * On gère les cas suivants : avion qui rentre sur garage, avion qui quitte le garage (erreur).
    * 
    * @param garageId      id du garage
-   * @param airplaneRef
+   * @param airplaneRef   référence de l'acteur [[AirplaneCommand]] destinaaire des messages (?)
    * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[GarageCommand]].
    */
   private def occupied(

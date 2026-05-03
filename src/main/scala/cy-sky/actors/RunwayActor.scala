@@ -32,10 +32,10 @@ object RunwayActor {
   /***
    * Données de la piste.
    * 
-   * @param runwayId          id
-   * @param state             état de la piste (Free, Landing, TakeOffInProgress, ...)
-   * @param occupiedBy        id de l'avion occupant la piste (valeur optionnelle, peut etre présente ou absente)
-   * @param towerRef
+   * @param runwayId            id de la piste
+   * @param state               état de la piste (Free, Landing, TakeOffInProgress, ...)
+   * @param occupiedBy          id de l'avion occupant la piste (valeur optionnelle, peut etre présente ou absente)
+   * @param towerRef            référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @param landingDurationMin  temps d'atterrissage minimal
    * @param takeoffDurationMin  temps de décollage minimal
    * @param taxiDurationMin     temps minimal pour aller au garage
@@ -94,8 +94,8 @@ object RunwayActor {
    * Initialise la piste comme étant vide.
    * Etat initial en début de simulation.
    * 
-   * @param runwayId id de la piste
-   * @param towerRef
+   * @param runwayId  id de la piste
+   * @param towerRef  référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[RunwayCommand]].
    */
   def apply(

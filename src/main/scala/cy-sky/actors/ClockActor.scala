@@ -29,7 +29,7 @@ object ClockActor {
    * Lance l'horloge de la simulation.
    * Méthode principale de [[ClockActor]].
    *
-   * @param towerRef     acteur ControlTower qui reçoit les ticks.
+   * @param towerRef     référence de l'acteur [[TowerControlActor]] qui reçoit les ticks (destinataire des messages)
    * @param startTime    heure de départ de la simulation.
    * @param tickInterval intervalle réel entre deux ticks (ex: 50.millis).
    * @param simStep      le pas du temps simulé par tick (ex: 1 minute).
@@ -51,10 +51,10 @@ object ClockActor {
 
   /***
    * Gère l'horloge pendant la simulation
-   * @param towerRef      acteur ControlTower qui reçoit les ticks.
+   * @param towerRef      référence de l'acteur [[TowerControlActor]] qui reçoit les ticks (destinataire des messages)
    * @param now           heure actuelle dans la simulation.
    * @param simStep       le pas du temps simulé par tick (ex: 1 minute).
-   * @param endTime      heure de fin de la simulation (le clock s'arrête proprement quand le temps simulé dépasse cette valeur).
+   * @param endTime       heure de fin de la simulation (le clock s'arrête proprement quand le temps simulé dépasse cette valeur).
    * 
    * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[ClockCommand]].
    */

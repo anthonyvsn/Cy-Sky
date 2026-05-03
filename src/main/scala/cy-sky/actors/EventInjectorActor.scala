@@ -26,9 +26,9 @@ import java.time.LocalDateTime
 object EventInjectorActor {   // object : singleton (1 seule instance possible). C'est comme "static class" en java.
 
   /***
-   * Methode de lancement de [[EventInjectorActor]]
+   * Méthode de lancement de [[EventInjectorActor]].
    * 
-   * @param towerRef
+   * @param towerRef    référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[ControlTowerCommand]].
    */
   def apply(
@@ -39,8 +39,7 @@ object EventInjectorActor {   // object : singleton (1 seule instance possible).
   /***
    * Méthode principale de gestion des événement injectés.
    * 
-   * 
-   * @param towerRef
+   * @param towerRef        référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @param pendingEvents   liste des événements injectés
    * @return un [[akka.actor.typed.Behavior]] qui décrit comment l'acteur réagit aux messages de type [[EventInjectorCommand]].
    */
@@ -52,7 +51,7 @@ object EventInjectorActor {   // object : singleton (1 seule instance possible).
     Behaviors.receive { (ctx, msg) =>
       msg match {
 
-        // ── Nouvel événement reçu depuis le front ─────────────────
+        // Nouvel événement reçu depuis le front
         case AddEvent(event) =>
           ctx.log.info(
             s"[EventInjector] Événement enregistré : " +
@@ -62,7 +61,7 @@ object EventInjectorActor {   // object : singleton (1 seule instance possible).
           )
           running(towerRef, event :: pendingEvents)
 
-        // ── Tick de l'horloge simulée ─────────────────────────────
+        // Tick de l'horloge simulée
         case Tick(simTime) =>
           // Chercher les événements dont le déclenchement (targetTime − 30 min) correspond au simTime courant.
           val toTrigger = pendingEvents.filter { e =>
@@ -108,7 +107,7 @@ object EventInjectorActor {   // object : singleton (1 seule instance possible).
   /***
    * Envoie un message a la TowerControl pour l'informer de l'action à effectuer en fonction du type de l'événement.
    * 
-   * @param towerRef
+   * @param towerRef  référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @param e         événement injecté
    * @param simTime   horaire de la simulation en cours
    * @return le type de l'événement.

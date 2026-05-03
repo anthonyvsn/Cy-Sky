@@ -168,7 +168,14 @@ object ScheduleManagerActor {   // object : singleton (1 seule instance possible
 
                 if (isEmergency) {
                   ctx.log.warn(s"[SM/URGENCE] Placement $airplaneId — urgences connues: $emergencyAirplaneIds — pistes: $runwayIds")
-                   simTime.toLocalTime,
+                  ctx.log.warn(s"[SM/URGENCE] Vols sur schedule par piste: ${schedule.map { case (r, fs) => s"$r=${fs.map(f => s"${f.airplaneId}@${f.scheduledTime}(${f.kind})").mkString(",")}" }.mkString(" | ")}")
+                }
+
+                findValidPlacement(
+                  schedule, runwayIds, airplaneId, newCounter,
+                  baseArrival, baseDep,
+                  runwayCount, garageCount,
+                  simTime.toLocalTime,
                   isEmergency,
                   updatedEmergencyIds,
                   if (isEmergency) Some(ctx.log) else None
@@ -557,11 +564,11 @@ object ScheduleManagerActor {   // object : singleton (1 seule instance possible
    * 3 types de Boom possibles :
    *  - RunwayConflict LAND -> [[BoomRunway]] : collision sur la piste à l'atterrissage.
    *  - RunwayConflict TAXI -> [[BoomTaxi]]   : collision sur la voie de circulation.
-   *  - GateOverflow, `Deadlock` ou autre -> [[BoomGarage]] : débordement de gate.
+   *  - GateOverflow, Deadlock ou autre -> [[BoomGarage]] : débordement de gate.
    * 
    * @param towerRef   référence de l'acteur [[TowerControlActor]] destinataire des messages
    * @param airplaneId id de l'avion qui a provoqué le conflit
-   * @param schedule   Planning en vigueur. => dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
+   * @param schedule   planning en vigueur. => dictionnaire qui relie chaque id de piste à la liste ordonnée des vols (`AircraftFlight`) qui lui sont affectés.
    * @param result     résultat de vérification Pétri
    * @param arrival    vol d'arrivée du nouvel avion
    * @param departure  vol de départ du nouvel avion
