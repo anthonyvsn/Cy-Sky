@@ -109,12 +109,13 @@ object ScheduleManagerActor {   // object : singleton (1 seule instance possible
             ctx.log.info(s"[ScheduleManager] Événement $triggeringEventId ignoré — heure cible trop tardive")
             running(towerRef, schedule, runwayIds, runwayCount, garageCount, mode, newCounter, rng, emergencyAirplaneIds)
           } else {
-            val airplaneId = s"SM_PLANE_$newCounter"
-            val dest       = randomDestination(rng)
+            val airplaneId  = randomRegId(rng)
+            val airlineCode = airlineCodes(rng.nextInt(airlineCodes.length))
+            val dest        = randomDestination(rng)
 
             // Squelettes — la piste sera affectée dans findValidPlacement
             val baseArrival = AircraftFlight(
-              flightId      = s"SM_ARR_$newCounter",
+              flightId      = s"${airlineCode}${f"$newCounter%03d"}A",
               airplaneId    = airplaneId,
               runway        = "",
               scheduledTime = arrivalTime,
@@ -122,7 +123,7 @@ object ScheduleManagerActor {   // object : singleton (1 seule instance possible
               kind          = Arrival
             )
             val baseDep = AircraftFlight(
-              flightId      = s"SM_DEP_$newCounter",
+              flightId      = s"${airlineCode}${f"$newCounter%03d"}D",
               airplaneId    = airplaneId,
               runway        = "",
               scheduledTime = departureTime,
@@ -672,6 +673,14 @@ object ScheduleManagerActor {   // object : singleton (1 seule instance possible
     "CDG", "JFK", "LHR", "AMS", "FRA", "MAD", "FCO", "IST",
     "DXB", "SIN", "NRT", "LAX", "ORD", "MUC", "BCN"
   )
+  private val airlineCodes = Vector(
+    "AF","BA","LH","KL","IB","AZ","TK","EK","SQ","NH",
+    "CX","DL","UA","AA","AC","QR","EY","FR","VY","SK"
+  )
+  private def randomRegId(rng: Random): String = {
+    val alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    s"${alpha(rng.nextInt(alpha.length))}${10 + rng.nextInt(90)}${alpha(rng.nextInt(alpha.length))}${10 + rng.nextInt(90)}"
+  }
   private def randomDestination(rng: Random): String =
     destinations(rng.nextInt(destinations.length))
 }

@@ -50,6 +50,15 @@ class ScheduleGenerator private (
 
   private val rng: Random = seed.fold(new Random)(s => new Random(s))
 
+  private val airlineCodes = Vector(
+    "AF","BA","LH","KL","IB","AZ","TK","EK","SQ","NH",
+    "CX","DL","UA","AA","AC","QR","EY","FR","VY","SK"
+  )
+  private def randomRegId(): String = {
+    val alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    s"${alpha(rng.nextInt(alpha.length))}${10 + rng.nextInt(90)}${alpha(rng.nextInt(alpha.length))}${10 + rng.nextInt(90)}"
+  }
+
   private val destinations = Vector(
     "CDG", "JFK", "LHR", "AMS", "FRA", "MAD", "FCO", "IST",
     "DXB", "SIN", "NRT", "LAX", "ORD", "MUC", "BCN", "ATL",
@@ -97,8 +106,8 @@ class ScheduleGenerator private (
           val gate   = gateIds(gateC % garages)
           val depRwy = runwayIds(rng.nextInt(runways))
           val flight = Flight(
-            flightId        = f"FL${idx}%04d",
-            airplaneId      = s"AC_${runwayId}_$idx",
+            flightId        = s"${airlineCodes((idx - 1) % airlineCodes.length)}${f"$idx%03d"}",
+            airplaneId      = randomRegId(),
             arrivalTime     = toTime(arrMin),
             arrivalRunway   = runwayId,
             departureRunway = depRwy,

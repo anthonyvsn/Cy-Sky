@@ -72,12 +72,13 @@ object ScheduleGeneratorAlgorithm {
           }
 
           if (runwayFree && capOk) {
-            val idx        = acc.size + 1
-            val airplaneId = s"PLANE_${runwayId}_$idx"
-            val dest       = randomDestination(rng)
+            val idx         = placedPairs.size + acc.size + 1
+            val airplaneId  = randomRegId(rng)
+            val airlineCode = airlineCodes(rng.nextInt(airlineCodes.length))
+            val dest        = randomDestination(rng)
 
             val arrival = AircraftFlight(
-              flightId        = s"${terminalId}_${runwayId}_ARR$idx",
+              flightId        = s"${airlineCode}${f"$idx%03d"}A",
               airplaneId      = airplaneId,
               runway          = runwayId,
               scheduledTime   = minutesToTime(arrMin),
@@ -85,7 +86,7 @@ object ScheduleGeneratorAlgorithm {
               kind            = Arrival
             )
             val departure = AircraftFlight(
-              flightId        = s"${terminalId}_${runwayId}_DEP$idx",
+              flightId        = s"${airlineCode}${f"$idx%03d"}D",
               airplaneId      = airplaneId,
               runway          = runwayId,
               scheduledTime   = minutesToTime(depMin),
@@ -117,6 +118,16 @@ object ScheduleGeneratorAlgorithm {
     "CDG", "JFK", "LHR", "AMS", "FRA", "MAD", "FCO", "IST",
     "DXB", "SIN", "NRT", "LAX", "ORD", "MUC", "BCN"
   )
+
+  private val airlineCodes = Vector(
+    "AF","BA","LH","KL","IB","AZ","TK","EK","SQ","NH",
+    "CX","DL","UA","AA","AC","QR","EY","FR","VY","SK"
+  )
+
+  private def randomRegId(rng: Random): String = {
+    val alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    s"${alpha(rng.nextInt(alpha.length))}${10 + rng.nextInt(90)}${alpha(rng.nextInt(alpha.length))}${10 + rng.nextInt(90)}"
+  }
 
   private def randomDestination(rng: Random): String =
     destinations(rng.nextInt(destinations.length))

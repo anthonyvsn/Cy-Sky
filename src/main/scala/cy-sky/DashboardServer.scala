@@ -158,29 +158,35 @@ object DashboardServer {
     val endM     = int("endMin",   59).max(0).min(59)
 
     try {
-      val schedule = ScheduleGeneratorAlgorithm.generate(
-        terminalId   = "T1",
-        runwayCount  = runways,
-        maxAirplanes = planes,
-        seed         = seed,
-        startTime    = LocalTime.of(startH, startM),
-        endTime      = LocalTime.of(endH,   endM)
-      )
-      SimState.setSchedule(schedule)
-      val flightCount = schedule.values.flatten.count(_.kind == Arrival)
+      @scala.annotation.tailrec
+      def tryWithSeed(currentSeed: Long, remaining: Int): (Int, String, String) = {
+        val schedule = ScheduleGeneratorAlgorithm.generate(
+          terminalId   = "T1",
+          runwayCount  = runways,
+          maxAirplanes = planes,
+          seed         = currentSeed,
+          startTime    = LocalTime.of(startH, startM),
+          endTime      = LocalTime.of(endH,   endM)
+        )
+        val verif = PetriScheduleVerifier.verify(schedule, runways, garages)
+        println(verif.report)
 
-      val verif = PetriScheduleVerifier.verify(schedule, runways, garages)
-      println(verif.report)
-
-      if (!verif.valid) {
-        val msg = esc(verif.report.replaceAll("[\n\r]", " ").take(300))
-        return (200, "application/json; charset=UTF-8",
-          s"""{"ok":false,"error":"Planning invalide — essayez d'autres paramètres ou une autre graine","report":"$msg"}""")
+        if (verif.valid) {
+          SimState.setSchedule(schedule)
+          SimState.setConfig(SimConfig(runways, garages, planes, currentSeed, startH, startM, endH, endM))
+          val flightCount = schedule.values.flatten.count(_.kind == Arrival)
+          (200, "application/json; charset=UTF-8",
+            s"""{"ok":true,"flights":$flightCount,"runways":$runways,"garages":$garages}""")
+        } else if (remaining > 0) {
+          tryWithSeed(currentSeed + 1, remaining - 1)
+        } else {
+          val msg = esc(verif.report.replaceAll("[\n\r]", " ").take(300))
+          (200, "application/json; charset=UTF-8",
+            s"""{"ok":false,"error":"Planning invalide — essayez d'autres paramètres ou une autre graine","report":"$msg"}""")
+        }
       }
 
-      SimState.setConfig(SimConfig(runways, garages, planes, seed, startH, startM, endH, endM))
-      (200, "application/json; charset=UTF-8",
-        s"""{"ok":true,"flights":$flightCount,"runways":$runways,"garages":$garages}""")
+      tryWithSeed(seed, 1)
 
     } catch {
       case e: Exception =>
