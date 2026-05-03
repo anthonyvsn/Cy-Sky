@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>CySky - Rapport - {{TERMINAL_ID}}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { color: darkblue; }
+    h2 { color: navy; border-bottom: 1px solid navy; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+    th, td { border: 1px solid black; padding: 5px 10px; text-align: left; }
+    th { background-color: #ccccee; }
+    tr:nth-child(even) { background-color: #f0f0f0; }
+    .stats { margin-bottom: 16px; }
+    .stats span { margin-right: 20px; font-weight: bold; }
+    .tabs { margin-bottom: 12px; }
+    .tab-btn { padding: 6px 14px; background: darkblue; color: white; border: none;
+               cursor: pointer; margin-right: 4px; }
+    .tab-btn:hover { background: navy; }
+    .tab-btn.active { background: green; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .badge-arr { background: lightblue; font-weight: bold; padding: 1px 5px; }
+    .badge-dep { background: lightgreen; font-weight: bold; padding: 1px 5px; }
+  </style>
+</head>
+<body>
+  <h1>CySky - Rapport Terminal {{TERMINAL_ID}}</h1>
+
+  <div class="stats">
+    <span>Total vols : {{TOTAL_FLIGHTS}}</span>
+    <span>Pistes actives : {{RUNWAY_COUNT}}</span>
+    <span>Vols par piste (moy.) : {{AVG_FLIGHTS}}</span>
+  </div>
+
+  <div class="tabs">{{TABS}}</div>
+
+  {{PANELS}}
+
+  <script>
+    function showTab(id, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('panel-' + id).classList.add('active');
+      btn.classList.add('active');
+    }
+    document.querySelector('.tab-btn').click();
+  </script>
+</body>
+</html>

@@ -104,7 +104,9 @@ object DashboardServer {
     val raw    = new String(ex.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
     val params = parseForm(raw)
 
-    val evtType = EventType.EmergencyArrival
+    val evtTypeStr = params.getOrElse("type", "EmergencyArrival")
+    val evtType = if (evtTypeStr == "GroundStrike") cysky.model.EventType.GroundStrike
+                  else cysky.model.EventType.EmergencyArrival
     val hour    = params.get("hour")  .flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(12)
     val minute  = params.get("minute").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(0)
     val urgency = params.get("urgency").flatMap(parseUrgency).getOrElse(UrgencyLevel.Commercial)
@@ -444,8 +446,17 @@ object DashboardServer {
 <div id="pre-sim">
   <h2>Etape 2 : Emploi du temps et evenements</h2>
 
-  <h3>Ajouter un atterrissage d'urgence</h3>
+  <h3>Ajouter un evenement dynamique</h3>
   <table style="width:auto">
+  <tr>
+      <td><b>Type d'evenement :</b></td>
+      <td>
+        <select id="evt-type">
+          <option value="EmergencyArrival">Atterrissage d'urgence</option>
+          <option value="GroundStrike">Greve au sol (Retard de 2h)</option>
+        </select>
+      </td>
+    </tr>
     <tr>
       <td><b>Heure cible :</b></td>
       <td>
@@ -668,7 +679,7 @@ function renderEventList() {
 }
 
 function addEvent() {
-  var body = 'type=EmergencyArrival' +
+  var body = 'type='     + encodeURIComponent(document.getElementById('evt-type').value) +
              '&hour='    + encodeURIComponent(document.getElementById('evt-hour').value) +
              '&minute='  + encodeURIComponent(document.getElementById('evt-min').value) +
              '&urgency=' + encodeURIComponent(document.getElementById('evt-urgency').value) +

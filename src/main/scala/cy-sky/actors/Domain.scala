@@ -155,6 +155,7 @@ sealed trait EventType {
  */
 object EventType {
   case object EmergencyArrival extends EventType { val displayName = "Atterrissage d'urgence" }
+  case object GroundStrike extends EventType { val displayName = "Grève au sol (Retard)" }
 }
 
 

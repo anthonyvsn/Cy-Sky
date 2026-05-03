@@ -121,5 +121,8 @@ object EventInjectorActor {   // object : singleton (1 seule instance possible).
     case EventType.EmergencyArrival =>
       val targetDt = simTime.toLocalDate.atTime(e.targetHour, e.targetMinute)
       towerRef ! InjectEmergencyArrival(e.urgencyLevel, targetDt)
+
+    case EventType.GroundStrike =>
+      towerRef ! cysky.protocol.ControlTowerCommand.DelayFlight(e.id, 120L)
   }
 }
